@@ -1,4 +1,4 @@
-console.log("--- START WERSJI Z GOOGLE AUTH --- JESTEM NOWYM PLIKIEM ---");
+console.log("--- START WERSJI Z GOOGLE AUTH + OPCJONALNYM 2FA ---");
 
 // --- Ustawienie Serwera Express (Node.js) ---
 const express = require('express');
@@ -6,24 +6,26 @@ const bodyParser = require('body-parser');
 const http = require('http');
 const https = require('https');
 const { DateTime } = require('luxon');
-
-// [NOWY KOD] Importowanie biblioteki Google Auth
 const { OAuth2Client } = require('google-auth-library');
+// [NOWY KOD 2FA] Import biblioteki 2FA
+const speakeasy = require('speakeasy');
 
 const app = express();
 const PORT = 3000;
 const PASSWORD = "ZMIEN_TO_HASLO_XD"; // Hasło dla RPi
 
-// [NOWY KOD] Konfiguracja Google Auth
-// WAŻNE: Wklej tutaj Client ID (Web application) z Google Cloud Console
+// Konfiguracja Google Auth
 const GOOGLE_CLIENT_ID = "79063316759-iva8uesd0vlj3in6eaeralk2kdkgv5or.apps.googleusercontent.com"; // STARY WEB ID
 const client = new OAuth2Client(GOOGLE_CLIENT_ID);
 
-// [NOWY KOD] Lista autoryzowanych użytkowników - startuje pusta!
-// Serwer będzie dopisywał nowe e-maile po udanym logowaniu Google
+// Lista autoryzowanych użytkowników - startuje pusta!
 let AUTHORIZED_USERS = [
     // Pusta na starcie
 ];
+
+// [NOWY KOD 2FA] Przechowywanie sekretów 2FA (w pamięci - resetuje się!)
+// Struktura: { "email@example.com": { secret: "...", verified: true/false, enabled: true/false, last_2fa_verified_at: 1678886400000 } }
+let userSecrets2FA = {};
 
 // DANE GLOBALNE: Przechowywanie stanów
 let registeredRPiIp = 'Brak IP RPi';
@@ -35,19 +37,36 @@ let lastSensorData = { sensors: [] };
 app.use(bodyParser.json());
 
 // --- ENDPOINT STATUSU (JSON) ---
+// --- ENDPOINT STATUSU (JSON) ---
 app.get('/status/json', (req, res) => {
+    // [ZMIANA 2FA] Dodajemy informację, czy 2FA jest skonfigurowane
+    const users2FAStatus = {};
+    for (const email in userSecrets2FA) {
+        if (userSecrets2FA.hasOwnProperty(email) && userSecrets2FA[email]) {
+             users2FAStatus[email] = {
+                 enabled: userSecrets2FA[email].enabled || false
+             };
+        }
+    }
+
+    // === ⭐️ POPRAWKA TUTAJ ⭐️ ===
+    // Pobieramy listę e-maili z obiektu userSecrets2FA,
+    // ponieważ 'AUTHORIZED_USERS' nie jest już używane.
+    const activeUserEmails = Object.keys(userSecrets2FA);
+    // =============================
+
     res.json({
         lastReportText: lastReportText,
         registeredRPiIp: registeredRPiIp,
         registeredAndroidIp: registeredAndroidIp,
-        // [ZMIANA] Dodajemy listę autoryzowanych użytkowników
-        authorizedUsers: AUTHORIZED_USERS
+        authorizedUsers: activeUserEmails, // <-- UŻYWAMY POPRAWIONEJ LISTY
+        users2FAStatus: users2FAStatus 
     });
 });
 
 // --- ENDPOINT STRONY GŁÓWNEJ (HTML ze statusem) ---
 app.get('/', (req, res) => {
-    // Prosta strona HTML do wyświetlenia stanu
+    // [ZMIANA 2FA] Dodano wyświetlanie statusu 2FA na stronie
     const htmlContent = `
         <!DOCTYPE html>
         <html lang="pl">
@@ -62,61 +81,52 @@ app.get('/', (req, res) => {
                 .ok { color: green; }
                 ul { list-style: none; padding: 0; }
                 li { background: #eee; margin: 5px 0; padding: 8px; border-radius: 3px; }
+                .user-2fa-enabled { color: green; font-weight: bold; }
+                .user-2fa-disabled { color: orange; }
             </style>
         </head>
         <body>
-            <h1>Status Serwera Bazunia (v2 z Google Auth)</h1>
+            <h1>Status Serwera Bazunia (v2 z Google Auth + Opcjonalnym 2FA)</h1>
             <div class="status-box">
                 <p>Ostatni meldunek (czas): <strong id="lastReport">Ładowanie...</strong></p>
             </div>
             <div class="status-box">
                 <p>Zarejestrowane RPi IP: <span id="rpiIp">Ładowanie...</span></p>
                 <p>Zarejestrowane Android IP: <span id="androidIp">Ładowanie...</span></p>
-                <small>Odświeżanie danych co 5 sekund (AJAX).</small>
             </div>
-            
-            <!-- [NOWA SEKCJA] Lista autoryzowanych użytkowników -->
             <div class="status-box">
                 <h2>Autoryzowani Użytkownicy:</h2>
                 <div id="authorizedUsersList"><p>Ładowanie...</p></div>
             </div>
-
             <script>
-                /**
-                 * Funkcja pobierająca status z serwera i aktualizująca DOM.
-                 */
                 function updateStatus() {
                     fetch('/status/json')
                         .then(response => response.json())
                         .then(data => {
-                            // 1. Ostatni meldunek
                             document.getElementById('lastReport').textContent = data.lastReportText;
-
-                            // 2. IP RPi
                             const rpiSpan = document.getElementById('rpiIp');
                             rpiSpan.textContent = data.registeredRPiIp;
                             rpiSpan.className = data.registeredRPiIp.startsWith('Brak') ? 'alert' : 'ok';
-                            
-                            // 3. IP Androida
                             const androidSpan = document.getElementById('androidIp');
                             androidSpan.textContent = data.registeredAndroidIp;
                             androidSpan.className = data.registeredAndroidIp.startsWith('Brak') ? 'alert' : 'ok';
-
-                            // [NOWY KOD] 4. Lista autoryzowanych użytkowników
                             const usersListDiv = document.getElementById('authorizedUsersList');
-                            usersListDiv.innerHTML = ''; // Wyczyść starą listę
+                            usersListDiv.innerHTML = '';
                             if (data.authorizedUsers && data.authorizedUsers.length > 0) {
                                 const ul = document.createElement('ul');
                                 data.authorizedUsers.forEach(email => {
                                     const li = document.createElement('li');
-                                    li.textContent = email;
+                                    let statusText = '[2FA: <span class="user-2fa-disabled">Nieaktywne</span>]';
+                                    if (data.users2FAStatus && data.users2FAStatus[email] && data.users2FAStatus[email].enabled) {
+                                        statusText = '[2FA: <span class="user-2fa-enabled">Aktywne</span>]';
+                                    }
+                                    li.innerHTML = \`\${email} \${statusText}\`;
                                     ul.appendChild(li);
                                 });
                                 usersListDiv.appendChild(ul);
                             } else {
                                 usersListDiv.innerHTML = '<p>Brak autoryzowanych użytkowników.</p>';
                             }
-
                             console.log('Status zaktualizowany.');
                         })
                         .catch(error => {
@@ -125,11 +135,7 @@ app.get('/', (req, res) => {
                             document.getElementById('authorizedUsersList').innerHTML = '<p>Błąd połączenia!</p>';
                         });
                 }
-
-                // Uruchomienie przy starcie
                 updateStatus();
-
-                // Odświeżanie co 5 sekund (5000 ms)
                 setInterval(updateStatus, 5000);
             </script>
         </body>
@@ -139,25 +145,38 @@ app.get('/', (req, res) => {
 });
 
 
-// --- ENDPOINT REJESTRACJI ANDROIDA ---
-app.post('/register/android', (req, res) => {
-    const { password, port } = req.body;
-    if (password !== PASSWORD || !port) {
-        return res.status(401).json({ error: 'Nieprawidlowe haslo lub brak portu.' });
+app.get('/auth/2fa/status', verifyGoogleToken, (req, res) => {
+    
+    // Middleware 'verifyGoogleToken' już zadziałał.
+    // Używamy 'req.userFromDB' (zgodnie z kodem middleware z Krok 2)
+    const user = req.userFromDB; 
+ 
+    if (!user) {
+        // To jest poprawne - user powinien istnieć, jeśli pyta o status
+        return res.status(404).json({ error: "Nie znaleziono użytkownika" });
     }
+ 
+    // Odpowiedz aplikacji, jaki jest FAKTYCZNY stan 2FA
+    // Aplikacja Android oczekuje pola o nazwie 'is2FAEnabled'
+    // Twoja baza w RAM (userSecrets2FA) przechowuje to w polu 'enabled'
+    res.json({
+        is2FAEnabled: user.enabled || false 
+    });
+});
+
+// --- ENDPOINTY REJESTRACJI (bez zmian) ---
+app.post('/register/android', (req, res) => { /* ... kod bez zmian ... */
+    const { password, port } = req.body;
+    if (password !== PASSWORD || !port) { return res.status(401).json({ error: 'Nieprawidlowe haslo lub brak portu.' }); }
     const publicIp = req.header('X-Forwarded-For') || req.ip;
     const clientIp = publicIp.split(',')[0].trim();
     registeredAndroidIp = `${clientIp}:${port}`;
     console.log(`[Rejestracja] Zarejestrowano publiczny IP Androida: ${registeredAndroidIp}`);
     res.json({ success: true, message: 'IP zarejestrowane pomyslnie.' });
 });
-
-// --- ENDPOINT REJESTRACJI RPi ---
-app.post('/register/rasp', (req, res) => {
+app.post('/register/rasp', (req, res) => { /* ... kod bez zmian ... */
     const { password, port } = req.body;
-    if (password !== PASSWORD || !port) {
-        return res.status(401).json({ error: 'Nieprawidlowe haslo lub brak portu.' });
-    }
+    if (password !== PASSWORD || !port) { return res.status(401).json({ error: 'Nieprawidlowe haslo lub brak portu.' }); }
     const publicIp = req.header('X-Forwarded-For') || req.ip;
     const clientIp = publicIp.split(',')[0].trim();
     registeredRPiIp = `${clientIp}:${port}`;
@@ -165,12 +184,10 @@ app.post('/register/rasp', (req, res) => {
     res.json({ success: true, message: 'IP zarejestrowane pomyslnie.' });
 });
 
-// --- ENDPOINT MELDUNKU (RPi) ---
-app.post('/update', (req, res) => {
-    const { password, message } = req.body; // Pamiętaj, RPi musi wysyłać 'message'
-    if (password !== PASSWORD) {
-        return res.status(401).json({ error: 'Nieprawidlowe haslo.' });
-    }
+// --- ENDPOINT MELDUNKU (RPi) (bez zmian) ---
+app.post('/update', (req, res) => { /* ... kod bez zmian ... */
+    const { password, message } = req.body;
+    if (password !== PASSWORD) { return res.status(401).json({ error: 'Nieprawidlowe haslo.' }); }
     const now = DateTime.now().setZone('Europe/Warsaw').toFormat('yyyy-MM-dd HH:mm:ss');
     const senderIp = req.header('X-Forwarded-For') || req.ip;
     const sender = registeredRPiIp.includes(senderIp.split(',')[0].trim()) ? 'RPi' : 'Inne';
@@ -184,110 +201,266 @@ app.post('/update', (req, res) => {
     res.json({ success: true, message: 'Meldunek odebrany pomyslnie.' });
 });
 
-// --- ENDPOINT DANYCH (RPi -> VPS) ---
-app.post('/data', (req, res) => {
+// --- ENDPOINT DANYCH (RPi -> VPS) (bez zmian) ---
+app.post('/data', (req, res) => { /* ... kod bez zmian ... */
     const { password, sensors } = req.body;
-    if (password !== PASSWORD || !sensors || !Array.isArray(sensors)) {
-        return res.status(401).json({ error: 'Nieprawidlowe haslo lub brak danych czujnikow.' });
-    }
+    if (password !== PASSWORD || !sensors || !Array.isArray(sensors)) { return res.status(401).json({ error: 'Nieprawidlowe haslo lub brak danych czujnikow.' }); }
     lastSensorData = { sensors: sensors };
     console.log(`[DANE CZUJNIKOW] Otrzymano ${sensors.length} wpisow.`);
     res.json({ success: true, message: 'Dane czujnikow zarejestrowane.' });
 });
 
 // --- ENDPOINT DANYCH (VPS -> Android) ---
-app.get('/data/android', (req, res) => {
-    // [ZMIANA] Teraz sprawdzamy token Google zamiast hasła
-    const authHeader = req.header('Authorization'); // Oczekujemy nagłówka "Authorization: Bearer <ID_TOKEN>"
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        console.warn("[DANE ANDROID] Odrzucono: Brak tokena Bearer.");
-        return res.status(401).json({ error: 'Brak tokena autoryzacyjnego.' });
-    }
-    
-    const idToken = authHeader.split(' ')[1];
+// Wymaga tokena Google, ale NIE SPRAWDZA 2FA (zgodnie z prośbą)
 
-    // Weryfikujemy token Google (bardzo podobnie jak w /auth/google)
-    verifyGoogleToken(idToken)
-        .then(payload => {
-            // Token poprawny, użytkownik zalogowany przez Google - wysyłamy dane
-            console.log(`[DANE ANDROID] Wyslano dane dla ${payload.email} (Polling).`);
-            res.json(lastSensorData);
-        })
-        .catch(error => {
-            // Token niepoprawny lub użytkownik nieautoryzowany
-            console.warn(`[DANE ANDROID] Odrzucono: ${error.message}`);
-            res.status(403).json({ error: `Odmowa dostępu: ${error.message}` });
-        });
+app.get('/data/android', verifyGoogleToken, async (req, res) => {
+    
+    // 1. Middleware 'verifyGoogleToken' już zadziałał i zweryfikował token.
+    // 2. Nie musimy już ręcznie sprawdzać nagłówka ani tokena.
+    // 3. Mamy dostęp do danych z Google przez 'req.googlePayload'.
+    
+    try {
+        // Logika z Twojego zrzutu (zachowana)
+        console.log(`[DANE ANDROID] Wysłano dane dla ${req.googlePayload.email} (Polling). 2FA nie sprawdzane.`);
+        
+        // Zwróć dane (zakładam, że 'lastSensorData' to zmienna globalna,
+        // tak jak w Twoim kodzie)
+        res.json(lastSensorData); 
+
+    } catch (error) {
+        // Ten błąd dotyczy teraz tylko wysyłania danych, nie autoryzacji
+        console.warn(`[DANE ANDROID] Błąd wysyłania danych: ${error.message}`);
+        res.status(500).json({ error: `Błąd serwera: ${error.message}` });
+    }
 });
 
+// --- FUNKCJA POMOCNICZA DO WERYFIKACJI TOKENA GOOGLE (bez zmian) ---
+async function verifyGoogleToken(req, res, next) {
+    let token;
 
-// [NOWY KOD]
-// --- FUNKCJA POMOCNICZA DO WERYFIKACJI TOKENA ---
-// Wydzielona logika weryfikacji, żeby jej nie powtarzać
-async function verifyGoogleToken(token) {
+    // 1. Spróbuj pobrać token z nagłówka (dla GET, jak /auth/2fa/status)
+    const authHeader = req.headers['authorization'];
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+    }
+    // 2. Jeśli nie ma, spróbuj z body (dla POST, jak /auth/google)
+    else if (req.body && req.body.token) {
+        token = req.body.token;
+    }
+
+    // 3. Jeśli nigdzie nie ma tokena, odrzuć
+    if (!token) {
+        return res.status(401).json({ error: 'Brak tokena autoryzacyjnego' });
+    }
+
+    // 4. Weryfikuj token
     try {
-        const ticket = await client.verifyIdToken({
+        const ticket = await client.verifyIdToken({ // Używa Twojej zmiennej 'client'
             idToken: token,
-            audience: GOOGLE_CLIENT_ID,
+            audience: GOOGLE_CLIENT_ID, 
         });
-        const payload = ticket.getPayload();
         
-        // Sprawdzamy, czy e-mail istnieje (na wszelki wypadek)
+        const payload = ticket.getPayload();
         if (!payload || !payload.email) {
             throw new Error('Nieprawidłowy payload tokena.');
         }
-
-        // Zwracamy payload, jeśli wszystko jest OK
-        return payload; 
         
+        const email = payload.email;
+        const userFromDB = userSecrets2FA[email]; // Używa Twojej bazy 'userSecrets2FA'
+        
+        // 5. Przypnij dane do obiektu 'req', aby następny handler miał do nich dostęp
+        req.googlePayload = payload; // Pełne dane z Google
+        req.userFromDB = userFromDB; // Dane usera z naszej bazy (mogą być 'undefined'!)
+        
+        next(); // Przejdź do właściwego handlera (np. /auth/google lub /auth/2fa/status)
+
     } catch (error) {
-        // Rzucamy błąd dalej, żeby można go było złapać w catch endpointu
-        throw new Error(`Nieprawidłowy token Google: ${error.message}`);
+        console.error('Błąd weryfikacji tokena Google:', error.message);
+        return res.status(403).json({ error: 'Nieprawidłowy lub nieważny token Google' });
     }
 }
 
+// --- ENDPOINT LOGOWANIA GOOGLE (POST /auth/google) ---
 
-// [NOWY KOD]
-// --- ENDPOINT WERYFIKACJI LOGOWANIA GOOGLE (POST /auth/google) ---
-app.post('/auth/google', async (req, res) => {
-    const { token } = req.body;
+app.post('/auth/google', verifyGoogleToken, async (req, res) => {
     
-    if (!token) {
-        return res.status(400).json({ error: 'Brak tokena.' });
+    // Middleware 'verifyGoogleToken' już zadziałał.
+    // Mamy teraz dostęp do 'req.googlePayload' i 'req.userFromDB' (z Krok 2).
+    
+    const email = req.googlePayload.email;
+    let user = req.userFromDB; // Pobierz usera z bazy (może być 'undefined')
+
+    // 1. Sprawdź, czy user istnieje w 'userSecrets2FA'. Jeśli nie, stwórz go.
+    // (Używam Twojej globalnej zmiennej 'userSecrets2FA')
+    if (!user) {
+        console.log(`[LOGOWANIE] Nowy użytkownik: ${email}. Tworzę wpis...`);
+        
+        userSecrets2FA[email] = {
+            secret: null,
+            enabled: false, // Domyślnie 2FA jest wyłączone (zgodnie z Twoim obrazkiem)
+            last_2fa_verified_at: null // Kluczowe dla logiki 5 minut
+        };
+        user = userSecrets2FA[email]; // 'user' teraz wskazuje na nowy obiekt
     }
 
-    try {
-        // Używamy nowej funkcji pomocniczej do weryfikacji
-        const payload = await verifyGoogleToken(token);
-        const userEmail = payload.email;
-        console.log(`[LOGOWANIE] Próba logowania przez: ${userEmail}`);
-
-        // [ZMIANA] Dopisywanie do listy, jeśli go nie ma
-        if (!AUTHORIZED_USERS.includes(userEmail)) {
-            AUTHORIZED_USERS.push(userEmail);
-            console.log(`[LOGOWANIE] Dodano nowego użytkownika do listy: ${userEmail}`);
+    // 2. Logika sprawdzania 5 minut (Twoja prośba)
+    let requires2FA = false; 
+    
+    // Sprawdź, czy 2FA jest WŁĄCZONE (używam 'user.enabled' z Twojego obrazka)
+    if (user.enabled) { 
+        const fiveMinutesAgo = Date.now() - (5 * 60 * 1000); // 5 minut w milisekundach
+        
+        if (!user.last_2fa_verified_at || user.last_2fa_verified_at < fiveMinutesAgo) {
+            // Wymagaj 2FA, jeśli nigdy nie było podane LUB jest starsze niż 5 min
+            requires2FA = true; 
         }
-        
-        // Zawsze zwracamy sukces, jeśli token był poprawny
-        console.log(`[LOGOWANIE] SUKCES: Użytkownik ${userEmail} jest autoryzowany (lub został dodany).`);
-        res.json({ 
-            success: true, 
-            message: `Witaj, ${payload.name || userEmail}!`,
-            email: userEmail
-        });
-        
+    }
+
+    console.log(`[LOGOWANIE] SUKCES: Użytkownik ${email} autoryzowany. Wymagane 2FA: ${requires2FA}`);
+    
+    // 3. Zwróć odpowiedź do aplikacji (pasującą do Twojego starego kodu)
+    res.json({
+        success: true, 
+        message: `Witaj, ${req.googlePayload.name || email}`,
+        email: email,
+        requires2FA: requires2FA // Najważniejsza informacja dla Androida
+    });
+});
+
+// === NOWA SEKCJA: ENDPOINTY 2FA ===
+
+// Endpoint do rozpoczęcia konfiguracji 2FA (POPRAWIONY)
+app.post('/2fa/setup', verifyGoogleToken, async (req, res) => {
+    // Middleware już zadziałał, mamy req.userFromDB i req.googlePayload
+    try {
+        const userEmail = req.googlePayload.email;
+        const user = req.userFromDB;
+
+        // Generuj sekret tylko jeśli nie ma aktywnego
+        if (!user.enabled) { // Używamy 'user' z middleware
+            const secret = speakeasy.generateSecret({ name: `Bazunia App (${userEmail})` });
+            
+            // Zaktualizuj obiekt użytkownika
+            user.secret = secret.base32;
+            user.verified = false; // 'verified' jest teraz przestarzałe, ale zostawiam
+            user.enabled = false; // Pozostaje false dopóki nie zweryfikuje
+
+            console.log(`[2FA] Wygenerowano nowy sekret dla ${userEmail}`);
+            res.json({ success: true, secret: secret.base32, otpauth_url: secret.otpauth_url });
+        } else {
+             console.log(`[2FA] Próba ponownego setupu dla aktywnego ${userEmail}.`);
+             res.status(400).json({ error: '2FA jest już aktywne. Wyłącz je najpierw.' });
+        }
     } catch (error) {
-        // Błąd z verifyGoogleToken
-        console.error("[LOGOWANIE] BŁĄD:", error.message);
-        res.status(401).json({ error: error.message }); // Zwracamy bardziej szczegółowy błąd
+        console.error("[2FA SETUP] BŁĄD:", error.message);
+        res.status(500).json({ error: `Błąd serwera: ${error.message}` });
     }
 });
-// [KONIEC NOWEGO KODU]
+
+// Endpoint do weryfikacji kodu TOTP i aktywacji 2FA (POPRAWIONY)
+app.post('/2fa/verify', verifyGoogleToken, async (req, res) => {
+    const { totpCode } = req.body;
+    if (!totpCode) return res.status(400).json({ error: 'Brak kodu TOTP.' });
+
+    try {
+        const userEmail = req.googlePayload.email;
+        const userData = req.userFromDB; // Pobierz usera z middleware
+
+        if (!userData?.secret) return res.status(400).json({ error: 'Sekret 2FA nie wygenerowany.' });
+
+        const verified = speakeasy.totp.verify({
+            secret: userData.secret, encoding: 'base32', token: totpCode, window: 1
+        });
+
+        if (verified) {
+            console.log(`[2FA] Weryfikacja kodu dla ${userEmail} udana.`);
+            userData.verified = true; // przestarzałe, ale OK
+            userData.enabled = true; // Włączamy 2FA!
+            res.json({ success: true, message: '2FA włączone.' });
+        } else {
+            console.warn(`[2FA] Nieudana weryfikacja kodu dla ${userEmail}.`);
+            res.status(400).json({ error: 'Nieprawidłowy kod 2FA.' });
+        }
+    } catch (error) {
+        console.error("[2FA VERIFY] BŁĄD:", error.message);
+        res.status(500).json({ error: `Błąd: ${error.message}` });
+    }
+});
+
+// Endpoint do wyłączania 2FA (POPRAWIONY)
+app.post('/2fa/disable', verifyGoogleToken, async (req, res) => {
+    const { totpCode } = req.body;
+    if (!totpCode) return res.status(400).json({ error: 'Brak kodu TOTP.' });
+
+     try {
+        const userEmail = req.googlePayload.email;
+        const userData = req.userFromDB;
+
+        if (!userData?.enabled) return res.status(400).json({ error: '2FA nie jest włączone.' });
+
+        const verified = speakeasy.totp.verify({
+            secret: userData.secret, encoding: 'base32', token: totpCode, window: 1
+        });
+
+        if (verified) {
+            console.log(`[2FA] Wyłączono 2FA dla ${userEmail}.`);
+            // Zerujemy stan, ale nie usuwamy usera
+            userData.secret = null;
+            userData.enabled = false;
+            userData.verified = false;
+            userData.last_2fa_verified_at = null;
+            res.json({ success: true, message: '2FA wyłączone.' });
+        } else {
+            console.warn(`[2FA] Nieudana próba wyłączenia 2FA dla ${userEmail} (zły kod).`);
+            res.status(400).json({ error: 'Nieprawidłowy kod 2FA.' });
+        }
+    } catch (error) {
+        console.error("[2FA DISABLE] BŁĄD:", error.message);
+        res.status(500).json({ error: `Błąd: ${error.message}` });
+    }
+});
+
+// WERYFIKACJA 2FA PRZY LOGOWANIU (POPRAWIONY)
+app.post('/auth/2fa/login-verify', verifyGoogleToken, async (req, res) => {
+    const { totpCode } = req.body;
+    if (!totpCode) return res.status(400).json({ error: 'Brak kodu 2FA.' });
+
+    try {
+        const userEmail = req.googlePayload.email;
+        const userData = req.userFromDB;
+
+        if (!userData?.enabled) {
+            console.warn(`[2FA LOGIN] Użytkownik ${userEmail} próbował zweryfikować 2FA, ale nie jest ono włączone. Przepuszczam.`);
+            return res.json({ success: true, message: '2FA nie jest wymagane, logowanie pomyślne.' });
+        }
+
+        const verified = speakeasy.totp.verify({
+            secret: userData.secret, encoding: 'base32', token: totpCode, window: 1
+        });
+
+        if (verified) {
+            console.log(`[2FA LOGIN] Weryfikacja logowania 2FA dla ${userEmail} udana.`);
+            
+            // === ⭐️ POPRAWKA DLA LOGIKI 5 MINUT ⭐️ ===
+            // Zapisujemy czas udanej weryfikacji
+            userData.last_2fa_verified_at = Date.now();
+            // ==========================================
+
+            res.json({ success: true, message: 'Kod 2FA poprawny. Zalogowano.' });
+        } else {
+            console.warn(`[2FA LOGIN] Nieudana weryfikacja logowania 2FA dla ${userEmail}.`);
+            res.status(400).json({ error: 'Nieprawidłowy kod 2FA.' });
+        }
+    } catch (error) {
+        console.error("[2FA LOGIN VERIFY] BŁĄD:", error.message);
+        res.status(500).json({ error: `Błąd: ${error.message}` });
+    }
+});
+
+// === KONIEC SEKCJI 2FA ===
 
 
 // --- URUCHOMIENIE SERWERA ---
 app.listen(PORT, () => {
     console.log(`Serwer Bazunia działa na porcie ${PORT}`);
 });
-
