@@ -9,10 +9,11 @@ const { DateTime } = require('luxon');
 const { OAuth2Client } = require('google-auth-library');
 // [NOWY KOD 2FA] Import biblioteki 2FA
 const speakeasy = require('speakeasy');
-
+const cors = require('cors');
 const app = express();
 const PORT = 3000;
 const PASSWORD = "ZMIEN_TO_HASLO_XD"; // Hasło dla RPi
+const path = require('path');
 
 // Konfiguracja Google Auth
 const GOOGLE_CLIENT_ID = "79063316759-iva8uesd0vlj3in6eaeralk2kdkgv5or.apps.googleusercontent.com"; // STARY WEB ID
@@ -36,7 +37,10 @@ let lastSensorData = { sensors: [] };
 let uniqueAndroidIPs = new Set();
 
 // Ustawienia middleware
+app.use(cors());
 app.use(bodyParser.json());
+
+app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
 // --- ENDPOINT STATUSU (JSON) ---
 app.get('/status/json', (req, res) => {
@@ -65,10 +69,11 @@ app.get('/status/json', (req, res) => {
     });
 });
 
+// /* 
 // --- ENDPOINT STRONY GŁÓWNEJ (HTML ze statusem) ---
-app.get('/', (req, res) => {
-    // [ZMIANA 2FA] Dodano wyświetlanie statusu 2FA na stronie
-   // W app.get('/', (req, res) => { ...
+// app.get('/', (req, res) => {
+//     // [ZMIANA 2FA] Dodano wyświetlanie statusu 2FA na stronie
+//    // W app.get('/', (req, res) => { ...
 
 // ... (początek kodu)
 
@@ -76,130 +81,131 @@ app.get('/', (req, res) => {
 
 // ... (początek kodu)
 
-const htmlContent = `
-        <!DOCTYPE html>
-        <html lang="pl">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Status Bazunia Serwer</title>
-            <style>
-                /* ⭐️ NOWY CIEMNY MOTYW ⭐️ */
-                body { 
-                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
-                    padding: 20px; 
-                    background: #1a1a1a; /* Bardzo ciemne tło */
-                    color: #ffffff; /* Jasny tekst */
-                }
-                h1 { color: #f4f4f4; border-bottom: 1px solid #333; padding-bottom: 10px; }
-                h2 { color: #aaaaaa; margin-top: 20px; font-weight: 500; font-size: 1.2em; }
-                
-                .status-box { 
-                    background: #2a2a2a; /* Ciemne tło sekcji */
-                    padding: 15px; 
-                    border-radius: 8px; 
-                    box-shadow: 0 4px 6px rgba(0,0,0,0.2); 
-                    margin-bottom: 20px; 
-                }
-                .alert { color: #ff6b6b; font-weight: bold; } /* Czerwony alert */
-                .ok { color: #48cfad; font-weight: bold; } /* Zielony sukces */
-                
-                ul { 
-                    list-style: none; 
-                    padding: 0; 
-                    margin-top: 10px;
-                }
-                li { 
-                    background: #3a3a3a; /* Tło dla elementów listy */
-                    margin: 5px 0; 
-                    padding: 10px; 
-                    border-radius: 5px; 
-                    border-left: 3px solid #666;
-                }
-                .user-2fa-enabled { color: #48cfad; font-weight: bold; }
-                .user-2fa-disabled { color: #ffc66d; } /* Zmieniono na pomarańczowo-żółty */
-            </style>
-        </head>
-        <body>
-            <h1>Status Serwera Bazunia (v2 z Google Auth + Opcjonalnym 2FA)</h1>
-            <div class="status-box">
-                <p>Ostatni meldunek (czas): <strong id="lastReport">Ładowanie...</strong></p>
-            </div>
-            <div class="status-box">
-                <p>Zarejestrowane RPi IP: <span id="rpiIp">Ładowanie...</span></p>
-                <h2>Unikalne IP Androidów:</h2>
-                <div id="androidIpsList"><p>Ładowanie...</p></div>
-            </div>
-            <div class="status-box">
-                <h2>Autoryzowani Użytkownicy:</h2>
-                <div id="authorizedUsersList"><p>Ładowanie...</p></div>
-            </div>
-            <script>
-                function updateStatus() {
-                    fetch('/status/json')
-                        .then(response => response.json())
-                        .then(data => {
-                            document.getElementById('lastReport').textContent = data.lastReportText;
-                            const rpiSpan = document.getElementById('rpiIp');
-                            rpiSpan.textContent = data.registeredRPiIp;
-                            rpiSpan.className = data.registeredRPiIp.startsWith('Brak') ? 'alert' : 'ok';
+// const htmlContent = `
+//         <!DOCTYPE html>
+//         <html lang="pl">
+//         <head>
+//             <meta charset="UTF-8">
+//             <meta name="viewport" content="width=device-width, initial-scale=1.0">
+//             <title>Status Bazunia Serwer</title>
+//             <style>
+//                 /* ⭐️ NOWY CIEMNY MOTYW ⭐️ */
+//                 body { 
+//                     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+//                     padding: 20px; 
+//                     background: #1a1a1a; /* Bardzo ciemne tło */
+//                     color: #ffffff; /* Jasny tekst */
+//                 }
+//                 h1 { color: #f4f4f4; border-bottom: 1px solid #333; padding-bottom: 10px; }
+//                 h2 { color: #aaaaaa; margin-top: 20px; font-weight: 500; font-size: 1.2em; }
+//                 
+//                 .status-box { 
+//                     background: #2a2a2a; /* Ciemne tło sekcji */
+//                     padding: 15px; 
+//                     border-radius: 8px; 
+//                     box-shadow: 0 4px 6px rgba(0,0,0,0.2); 
+//                     margin-bottom: 20px; 
+//                 }
+//                 .alert { color: #ff6b6b; font-weight: bold; } /* Czerwony alert */
+//                 .ok { color: #48cfad; font-weight: bold; } /* Zielony sukces */
+//                 
+//                 ul { 
+//                     list-style: none; 
+//                     padding: 0; 
+//                     margin-top: 10px;
+//                 }
+//                 li { 
+//                     background: #3a3a3a; /* Tło dla elementów listy */
+//                     margin: 5px 0; 
+//                     padding: 10px; 
+//                     border-radius: 5px; 
+//                     border-left: 3px solid #666;
+//                 }
+//                 .user-2fa-enabled { color: #48cfad; font-weight: bold; }
+//                 .user-2fa-disabled { color: #ffc66d; } /* Zmieniono na pomarańczowo-żółty */
+//             </style>
+//         </head>
+//         <body>
+//             <h1>Status Serwera Bazunia (v2 z Google Auth + Opcjonalnym 2FA)</h1>
+//             <div class="status-box">
+//                 <p>Ostatni meldunek (czas): <strong id="lastReport">Ładowanie...</strong></p>
+//             </div>
+//             <div class="status-box">
+//                 <p>Zarejestrowane RPi IP: <span id="rpiIp">Ładowanie...</span></p>
+//                 <h2>Unikalne IP Androidów:</h2>
+//                 <div id="androidIpsList"><p>Ładowanie...</p></div>
+//             </div>
+//             <div class="status-box">
+//                 <h2>Autoryzowani Użytkownicy:</h2>
+//                 <div id="authorizedUsersList"><p>Ładowanie...</p></div>
+//             </div>
+//             <script>
+//                 function updateStatus() {
+//                     fetch('/status/json')
+//                         .then(response => response.json())
+//                         .then(data => {
+//                             document.getElementById('lastReport').textContent = data.lastReportText;
+//                             const rpiSpan = document.getElementById('rpiIp');
+//                             rpiSpan.textContent = data.registeredRPiIp;
+//                             rpiSpan.className = data.registeredRPiIp.startsWith('Brak') ? 'alert' : 'ok';
 							
 							// ⭐️ POPRAWIONA I DZIAŁAJĄCA LOGIKA DLA LISTY IP ANDROIDA ⭐️
-							const androidIpsListDiv = document.getElementById('androidIpsList');
-							androidIpsListDiv.innerHTML = '';
-							if (data.registeredAndroidIps && data.registeredAndroidIps.length > 0) {
-								const ul = document.createElement('ul');
-								data.registeredAndroidIps.forEach(ip => {
-									const li = document.createElement('li');
+							// const androidIpsListDiv = document.getElementById('androidIpsList');
+							// androidIpsListDiv.innerHTML = '';
+							// if (data.registeredAndroidIps && data.registeredAndroidIps.length > 0) {
+								// const ul = document.createElement('ul');
+								// data.registeredAndroidIps.forEach(ip => {
+									// const li = document.createElement('li');
 									// Poprawiona składnia: konkatenacja
-									li.innerHTML = '<span class="ok">' + ip + '</span>'; 
-									ul.appendChild(li);
-								});
-								androidIpsListDiv.appendChild(ul);
-							} else {
-								androidIpsListDiv.innerHTML = '<p class="alert">Brak zarejestrowanych adresów IP Androida.</p>';
-							}
+									// li.innerHTML = '<span class="ok">' + ip + '</span>'; 
+									// ul.appendChild(li);
+								// });
+								// androidIpsListDiv.appendChild(ul);
+							// } else {
+								// androidIpsListDiv.innerHTML = '<p class="alert">Brak zarejestrowanych adresów IP Androida.</p>';
+							// }
 							// =======================================
 							
-                            const usersListDiv = document.getElementById('authorizedUsersList');
-                            usersListDiv.innerHTML = '';
-                            if (data.authorizedUsers && data.authorizedUsers.length > 0) {
-                                const ul = document.createElement('ul');
-                                data.authorizedUsers.forEach(email => {
-                                    const li = document.createElement('li');
-                                    let statusText = '[2FA: <span class="user-2fa-disabled">Nieaktywne</span>]';
-                                    if (data.users2FAStatus && data.users2FAStatus[email] && data.users2FAStatus[email].enabled) {
-                                        statusText = '[2FA: <span class="user-2fa-enabled">Aktywne</span>]';
-                                    }
-                                    // Używamy Template Literal, bo jest to standardowa funkcjonalność
-                                    li.innerHTML = \`\${email} \${statusText}\`;
-                                    ul.appendChild(li);
-                                });
-                                usersListDiv.appendChild(ul);
-                            } else {
-                                usersListDiv.innerHTML = '<p>Brak autoryzowanych użytkowników.</p>';
-                            }
-                            console.log('Status zaktualizowany.');
-                        })
-                        .catch(error => {
-                            console.error('Błąd pobierania statusu:', error);
-                            document.getElementById('lastReport').textContent = 'Błąd połączenia z serwerem!';
-                            document.getElementById('authorizedUsersList').innerHTML = '<p>Błąd połączenia!</p>';
-                        });
-                }
-                updateStatus();
-                setInterval(updateStatus, 5000);
-            </script>
-        </body>
-        </html>
-    `;
+//                             const usersListDiv = document.getElementById('authorizedUsersList');
+//                             usersListDiv.innerHTML = '';
+//                             if (data.authorizedUsers && data.authorizedUsers.length > 0) {
+//                                 const ul = document.createElement('ul');
+//                                 data.authorizedUsers.forEach(email => {
+//                                     const li = document.createElement('li');
+//                                     let statusText = '[2FA: <span class="user-2fa-disabled">Nieaktywne</span>]';
+//                                     if (data.users2FAStatus && data.users2FAStatus[email] && data.users2FAStatus[email].enabled) {
+//                                         statusText = '[2FA: <span class="user-2fa-enabled">Aktywne</span>]';
+//                                     }
+//                                     // Używamy Template Literal, bo jest to standardowa funkcjonalność
+//                                     li.innerHTML = \`\${email} \${statusText}\`;
+//                                     ul.appendChild(li);
+//                                 });
+//                                 usersListDiv.appendChild(ul);
+//                             } else {
+//                                 usersListDiv.innerHTML = '<p>Brak autoryzowanych użytkowników.</p>';
+//                             }
+//                             console.log('Status zaktualizowany.');
+//                         })
+//                         .catch(error => {
+//                             console.error('Błąd pobierania statusu:', error);
+//                             document.getElementById('lastReport').textContent = 'Błąd połączenia z serwerem!';
+//                             document.getElementById('authorizedUsersList').innerHTML = '<p>Błąd połączenia!</p>';
+//                         });
+//                 }
+//                 updateStatus();
+//                 setInterval(updateStatus, 5000);
+//             </script>
+//         </body>
+//         </html>
+//     `;
 
 // ... (koniec kodu)
 
 // ... (koniec kodu)
-    res.send(htmlContent);
-});
+//     res.send(htmlContent);
+// });
 
+ // */
 
 app.get('/auth/2fa/status', verifyGoogleToken, (req, res) => {
     
@@ -523,6 +529,13 @@ app.post('/auth/2fa/login-verify', verifyGoogleToken, async (req, res) => {
 
 // === KONIEC SEKCJI 2FA ===
 
+// === NOWY KOD DLA PRODUKCJI (Catch-all) ===
+// Ta trasa musi być PO WSZYSTKICH trasach API
+// Przekierowuje wszystkie inne zapytania do index.html Reacta
+// To pozwala React Routerowi przejąć kontrolę nad stronami
+app.get(/.*/, (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/dist', 'index.html'));
+});
 
 // --- URUCHOMIENIE SERWERA ---
 app.listen(PORT, () => {
