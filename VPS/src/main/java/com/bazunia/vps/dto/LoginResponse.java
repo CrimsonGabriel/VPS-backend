@@ -1,2 +1,2 @@
 package com.bazunia.vps.dto;
-public record LoginResponse(String token, boolean requiresPasswordSetup) {}
+public record LoginResponse(String token) {}

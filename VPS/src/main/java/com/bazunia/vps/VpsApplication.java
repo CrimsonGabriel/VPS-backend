@@ -2,11 +2,11 @@ package com.bazunia.vps;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.context.annotation.ComponentScan; // <-- DODAJ TEN IMPORT
 
-
+// ⭐️ DODANA KLUCZOWA LINIA ⭐️
+@ComponentScan(basePackages = "com.bazunia.vps") 
 @SpringBootApplication
-@EnableAsync
 public class VpsApplication {
 
     public static void main(String[] args) {

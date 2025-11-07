@@ -10,9 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal; // Można też użyć @RequestAttribute
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
-import com.bazunia.vps.dto.PasswordRequest;
-import com.bazunia.vps.service.DataService;
-import org.springframework.web.bind.annotation.PostMapping;
+
 import java.util.List;
 import java.util.Map; // <-- NOWY IMPORT
 import java.util.Optional;
@@ -25,8 +23,7 @@ public class AdminController {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final UpdateService updateService;
-    private final DataService dataService;
+    private final UpdateService updateService; // <-- NOWA ZALEŻNOŚĆ
 
     // DTOs dla uproszczenia (możesz je przenieść do pakietu dto)
     public record AdminUserRequest(
@@ -160,5 +157,4 @@ public class AdminController {
         updateService.setUpdateStatus(request.key(), request.status(), request.shouldNotify());
         return ResponseEntity.ok(Map.of("message", String.format("Status dla %s ustawiony na %s.", request.key(), request.status())));
     }
-
 }

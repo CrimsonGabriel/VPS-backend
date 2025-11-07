@@ -33,15 +33,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
 
         final String authHeader = request.getHeader("Authorization");
-
-        // ⭐️⭐️ POCZĄTEK TYMCZASOWEGO LOGOWANIA ⭐️⭐️
-        // Logujemy tylko żądania do chronionego API
-        if (request.getRequestURI().startsWith("/api/")) {
-            System.out.println("DEBUG: Sprawdzanie żądania dla: " + request.getRequestURI());
-            System.out.println("DEBUG: Nagłówek Authorization: " + authHeader);
-        }
-        // ⭐️⭐️ KONIEC TYMCZASOWEGO LOGOWANIA ⭐️⭐️
-
         final String jwt;
         final String userEmail;
 
