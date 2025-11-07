@@ -24,8 +24,6 @@ public class User implements UserDetails { // Implementujemy UserDetails dla Spr
 
     private String name; // Imię (z Google, opcjonalne)
 
-    // WYMÓG #2: Dodajemy pole na hasło
-    // Jest nullable (może być puste), bo użytkownicy z Google NIE BĘDĄ mieli hasła!
     @Column(nullable = true)
     private String password; // Będzie przechowywać HASH!
 
@@ -38,18 +36,22 @@ public class User implements UserDetails { // Implementujemy UserDetails dla Spr
     private boolean twoFactorEnabled = false;
     private LocalDateTime lastTwoFactorLogin;
 
+    // ⭐️ NOWE POLA DLA AKTYWACJI E-MAIL ⭐️
+    @Column(nullable = false)
+    private boolean enabled = false; // Domyślnie konto jest NIEAKTYWNE
+
+    @Column(unique = true)
+    private String activationToken; // Token do aktywacji e-mail
+
     // --- Magia Spring Security ---
-    // Te metody są potrzebne, żeby działało logowanie login/hasło
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        // Na razie każdy jest USEREM
         return List.of(new SimpleGrantedAuthority("ROLE_" + this.role.name()));
     }
 
     @Override
     public String getUsername() {
-        // Naszym "username" jest email
         return this.email;
     }
 
@@ -63,5 +65,8 @@ public class User implements UserDetails { // Implementujemy UserDetails dla Spr
     public boolean isCredentialsNonExpired() { return true; }
 
     @Override
-    public boolean isEnabled() { return true; }
+    public boolean isEnabled() {
+        // ⭐️ ZMODYFIKOWANE: Spring Security będzie teraz sprawdzać to pole ⭐️
+        return this.enabled;
+    }
 }

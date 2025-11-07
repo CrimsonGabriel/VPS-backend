@@ -34,17 +34,21 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
-                // ⭐️ POPRAWKA 2: Poprawna konfiguracja CORS zamiast .cors(cors -> cors.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
                 .authorizeHttpRequests(authz -> authz
-                        // ⭐️ POPRAWKA 3: Jawne zezwolenie na żądania OPTIONS (Preflight)
-                        // Ta reguła musi być JEDNĄ Z PIERWSZYCH.
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
                         .requestMatchers("/debug-key").permitAll()
-                        // Endpointy publiczne (RPi, Logowanie, Status) - BEZ ZMIAN
+                        // Endpointy publiczne (RPi, Logowanie, Status)
                         .requestMatchers("/register/rasp", "/register/android", "/update", "/data").permitAll()
+
+                        // ⭐️ ZEZWOLENIE NA NOWE ENDPOINTY ⭐️
+                        // /api/auth/login jest już pokryte przez /api/auth/**
+                        .requestMatchers("/api/auth/android/register").permitAll()
+                        .requestMatchers("/api/auth/android/activate").permitAll()
+                        // ⭐️ KONIEC ZMIAN ⭐️
+
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/auth/**", "/2fa/**").permitAll()
                         .requestMatchers("/status/json", "/").permitAll()

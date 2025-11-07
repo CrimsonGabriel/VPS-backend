@@ -5,6 +5,7 @@ import com.bazunia.vps.dto.LoginResponse;
 import com.bazunia.vps.dto.RegisterRequest;
 import com.bazunia.vps.dto.TwoFaSetupResponse;
 import com.bazunia.vps.model.User;
+import com.bazunia.vps.model.Role;
 import com.bazunia.vps.repository.UserRepository;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
@@ -14,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import com.bazunia.vps.dto.EmailRegistrationRequest;
 import org.springframework.stereotype.Service;
 
 // Importy dla 2FA
@@ -23,7 +25,7 @@ import dev.samstevens.totp.secret.SecretGenerator;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
-
+import java.util.UUID;
 
 @Service
 public class AuthService {
@@ -39,6 +41,9 @@ public class AuthService {
     private final SecretGenerator secretGenerator;
     private final CodeVerifier codeVerifier;
 
+    // ⭐️ NOWA ZALEŻNOŚĆ DLA E-MAILI ⭐️
+    private final EmailService emailService;
+
     // KLUCZ SERWERA DO WERYFIKACJI
     private static final String GOOGLE_CLIENT_ID = "79063316759-iva8uesd0vlj3in6eaeralk2kdkgv5or.apps.googleusercontent.com";
     private static final Logger logger = Logger.getLogger(AuthService.class.getName());
@@ -46,7 +51,7 @@ public class AuthService {
     @Autowired
     public AuthService(UserRepository userRepository, StatusService statusService, JwtService jwtService,
                        PasswordEncoder passwordEncoder, AuthenticationManager authenticationManager,
-                       SecretGenerator secretGenerator, CodeVerifier codeVerifier) { // Dodane 2FA
+                       SecretGenerator secretGenerator, CodeVerifier codeVerifier, EmailService emailService) { // Dodane 2FA
         this.userRepository = userRepository;
         this.statusService = statusService;
         this.jwtService = jwtService;
@@ -54,9 +59,9 @@ public class AuthService {
         this.authenticationManager = authenticationManager;
         this.secretGenerator = secretGenerator;
         this.codeVerifier = codeVerifier;
+        this.emailService = emailService;
     }
 
-    // --- Metoda pomocnicza do weryfikacji Google (Z DODANYMI LOGAMI) ---
     private User verifyGoogleTokenAndGetUser(String googleToken) throws Exception {
         GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new GsonFactory())
                 .setAudience(Collections.singletonList(GOOGLE_CLIENT_ID))
@@ -64,7 +69,6 @@ public class AuthService {
 
         GoogleIdToken idToken = verifier.verify(googleToken);
         if (idToken == null) {
-            // ⭐️ DODANY LOG DIAGNOSTYCZNY ⭐️
             logger.warning("Niepowodzenie weryfikacji tokena Google. Token ID jest NULL.");
             throw new IllegalArgumentException("Nieprawidłowy token Google.");
         }
@@ -73,7 +77,6 @@ public class AuthService {
         String email = payload.getEmail();
         String name = (String) payload.get("name");
 
-        // ⭐️ DODANY LOG DIAGNOSTYCZNY ⭐️
         logger.info("Pomyślna weryfikacja Google dla email: " + email);
 
         // Znajdź lub stwórz usera
@@ -82,7 +85,8 @@ public class AuthService {
             newUser.setEmail(email);
             newUser.setName(name);
             newUser.setTwoFactorEnabled(false);
-            logger.info("Tworzenie nowego usera: " + email);
+            newUser.setEnabled(true); // ⭐️ UŻYTKOWNICY GOOGLE SĄ AKTYWNI OD RAZU ⭐️
+            logger.info("Tworzenie nowego usera (Google): " + email);
             return userRepository.save(newUser);
         });
     }
@@ -223,5 +227,48 @@ public class AuthService {
 
     public record AuthResponse(String jwt, boolean requires2FA, String message) {}
 
+    // ⭐️⭐️ NOWA METODA ⭐️⭐️
+    public void registerAndroidUser(EmailRegistrationRequest request) {
+        // 1. Sprawdź, czy e-mail już istnieje
+        if (userRepository.findByEmail(request.email()).isPresent()) {
+            // Rzucamy wyjątek, który kontroler zamieni na 409 Conflict
+            throw new IllegalStateException("Email już zajęty");
+        }
+
+        // 2. Stwórz nowego użytkownika
+        User user = new User();
+        user.setEmail(request.email());
+        user.setPassword(passwordEncoder.encode(request.password()));
+        user.setRole(Role.USER);
+        user.setEnabled(false); // ⭐️ WAŻNE: Konto jest NIEAKTYWNE
+
+        // 3. Wygeneruj token aktywacyjny
+        String token = UUID.randomUUID().toString();
+        user.setActivationToken(token);
+
+        // 4. Zapisz użytkownika w bazie
+        userRepository.save(user);
+
+        // 5. Wyślij e-mail aktywacyjny (zakładając, że masz EmailService)
+        // Musisz zaimplementować EmailService i skonfigurować SMTP w application.properties!
+        String activationLink = "http://TWOJ_ADRES_IP:8080/api/auth/android/activate?token=" + token;
+        emailService.sendActivationEmail(user.getEmail(), activationLink);
+    }
+
+    // ⭐️⭐️ NOWA METODA ⭐️⭐️
+    public void activateUser(String token) {
+        // 1. Znajdź użytkownika po tokenie
+        // (Musisz dodać metodę findByActivationToken do swojego UserRepository!)
+        User user = userRepository.findByActivationToken(token)
+                .orElseThrow(() -> new IllegalArgumentException("Nieprawidłowy token aktywacyjny"));
+
+        // 2. Aktywuj konto i usuń token
+        user.setEnabled(true);
+        user.setActivationToken(null); // Token jest jednorazowy
+        userRepository.save(user);
+
+        // Opcjonalnie: możesz wysłać e-mail "Witaj, Twoje konto jest aktywne"
+        // emailService.sendWelcomeEmail(user.getEmail());
+    }
 
 }

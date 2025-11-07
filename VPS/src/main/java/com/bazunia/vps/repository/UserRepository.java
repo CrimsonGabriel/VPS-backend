@@ -8,4 +8,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     // Potrzebujemy metody do wyszukiwania użytkownika po emailu
     Optional<User> findByEmail(String email);
+
+    Optional<User> findByActivationToken(String token);
 }

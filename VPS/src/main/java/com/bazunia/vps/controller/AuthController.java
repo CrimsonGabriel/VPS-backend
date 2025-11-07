@@ -8,15 +8,16 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.Map;
-import java.util.logging.Logger; // <-- DODANY IMPORT
+import java.util.logging.Logger;
 
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
 
     private final AuthService authService;
-    private final Logger controllerLogger = Logger.getLogger(AuthController.class.getName()); // <-- DODANY LOGGER
+    private final Logger controllerLogger = Logger.getLogger(AuthController.class.getName());
 
     @Autowired
     public AuthController(AuthService authService) {
@@ -49,9 +50,8 @@ public class AuthController {
             @RequestBody(required = false) Map<String, String> body,
             HttpServletRequest request) {
 
-        // ⭐️ DODANY LOG DIAGNOSTYCZNY NA POCZĄTKU ENDPOINTU ⭐️
         String ip = getClientIp(request);
-        controllerLogger.info(">>> OTRZYMANO ŻĄDANIE /api/auth/google z IP: " + ip); // <-- TUTAJ BĘDZIE LOG!
+        controllerLogger.info(">>> OTRZYMANO ŻĄDANIE /api/auth/google z IP: " + ip);
 
         String token = extractGoogleToken(authHeader, body);
         if (token == null) {
@@ -85,19 +85,47 @@ public class AuthController {
         try {
             String ip = getClientIp(request);
             LoginResponse response = authService.loginUser(loginRequest, ip);
-
             return ResponseEntity.ok(response);
-
         } catch (AuthenticationException e) {
-            // ⭐️ Zwrot 401 z komunikatem JSON (zgodnie z oczekiwaniami front-endu) ⭐️
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "Nieprawidłowy login lub hasło."));
-
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", e.getMessage()));
         }
     }
+
+    // ⭐️⭐️ NOWY ENDPOINT: REJESTRACJA ANDROID ⭐️⭐️
+    // Pełna ścieżka: /api/auth/android/register
+    @PostMapping("/android/register")
+    public ResponseEntity<?> registerAndroidUser(@RequestBody EmailRegistrationRequest request) {
+        try {
+            authService.registerAndroidUser(request);
+            // 200 OK oznacza, że serwer przyjął żądanie i wysyła e-mail
+            return ResponseEntity.ok().build();
+        } catch (IllegalStateException e) {
+            // Jeśli e-mail jest zajęty (z AuthService)
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Błąd serwera podczas rejestracji");
+        }
+    }
+
+    // ⭐️⭐️ NOWY ENDPOINT: AKTYWACJA KONTA ANDROID ⭐️⭐️
+    // Pełna ścieżka: /api/auth/android/activate
+    @GetMapping("/android/activate")
+    public ResponseEntity<String> activateAccount(@RequestParam("token") String token) {
+        try {
+            authService.activateUser(token);
+            // Zwraca prostą stronę HTML z informacją o sukcesie
+            return ResponseEntity.ok("<h1>Twoje konto zostało pomyślnie aktywowane!</h1><p>Możesz teraz zalogować się w aplikacji.</p>");
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body("<h1>Błąd</h1><p>Nieprawidłowy lub wygasły link aktywacyjny.</p>");
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("<h1>Błąd</h1><p>Wystąpił wewnętrzny błąd serwera.</p>");
+        }
+    }
+
 
     // --- ENDPOINTY 2FA ---
     // Pełna ścieżka: /api/auth/2fa/status
