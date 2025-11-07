@@ -84,7 +84,8 @@ public class AuthController {
     public ResponseEntity<?> login(@RequestBody LoginRequest loginRequest, HttpServletRequest request) {
         try {
             String ip = getClientIp(request);
-            LoginResponse response = authService.loginUser(loginRequest, ip);
+            // ⭐️ POPRAWKA: Zmieniono typ z 'LoginResponse' na 'AuthService.AuthResponse'
+            AuthService.AuthResponse response = authService.loginUser(loginRequest, ip);
             return ResponseEntity.ok(response);
         } catch (AuthenticationException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -214,4 +215,20 @@ public class AuthController {
             return new ResponseEntity<>(e.getMessage(), HttpStatus.BAD_REQUEST);
         }
     }
+    @PostMapping("/2fa/email-verify")
+    public ResponseEntity<?> loginVerifyEmailTwoFa(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody TwoFaRequest body) {
+
+        String token = extractGoogleToken(authHeader, null); // Twoja metoda działa też na JWT
+        if (token == null) return new ResponseEntity<>("Brak tokena", HttpStatus.UNAUTHORIZED);
+
+        try {
+            LoginResponse response = authService.loginVerifyEmailTwoFa(token, body.totpCode());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return new ResponseEntity<>(e.getMessage(), HttpStatus.UNAUTHORIZED);
+        }
+    }
+
 }

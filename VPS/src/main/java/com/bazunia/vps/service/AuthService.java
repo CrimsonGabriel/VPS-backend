@@ -96,16 +96,10 @@ public class AuthService {
     public AuthResponse loginWithGoogle(String googleToken, String ipAddress) {
         try {
             User user = verifyGoogleTokenAndGetUser(googleToken);
-            statusService.addAndroidIp(ipAddress); // <-- TO BYŁ JEDYNY WIDOCZNY LOG
+            statusService.addAndroidIp(ipAddress);
 
-            // Logika 5 minut (z server.js)
-            boolean requires2FA = false;
-            if (user.isTwoFactorEnabled()) {
-                if (user.getLastTwoFactorLogin() == null ||
-                        user.getLastTwoFactorLogin().isBefore(LocalDateTime.now().minusMinutes(5))) {
-                    requires2FA = true;
-                }
-            }
+            // ⭐️⭐️ ZMODYFIKOWANE: Użycie nowej metody pomocniczej ⭐️⭐️
+            boolean requires2FA = is2FaRequired(user);
 
             if (requires2FA) {
                 // Zwraca null JWT, ale idToken jest używany w kolejnym kroku
@@ -130,31 +124,41 @@ public class AuthService {
         User user = new User();
         user.setEmail(request.email());
         user.setPassword(passwordEncoder.encode(request.password()));
+        // Upewnijmy się, że nowi użytkownicy z panelu admina też są aktywni
+        user.setEnabled(true);
         userRepository.save(user);
     }
 
-    public LoginResponse loginUser(LoginRequest request, String ipAddress) { // <-- 1. Dodaj ipAddress
+    public AuthResponse loginUser(LoginRequest request, String ipAddress) {
+        // Krok 1: Uwierzytelnij e-mail i hasło
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(request.email(), request.password())
         );
         User user = userRepository.findByEmail(request.email()).orElseThrow();
 
-        // 2. Dodaj IP do serwisu statusu (tak jak robi to logowanie Google)
+        // Krok 2: Zarejestruj IP (tak jak wcześniej)
         statusService.addAndroidIp(ipAddress);
 
+        // ⭐️⭐️ ZMODYFIKOWANE: Użycie nowej metody pomocniczej ⭐️⭐️
+        boolean requires2FA = is2FaRequired(user);
+
+        // Krok 4: Wygeneruj token JWT
         String jwt = jwtService.generateToken(user);
-        return new LoginResponse(jwt);
+
+        if (requires2FA) {
+            return new AuthResponse(jwt, true, "Wymagane 2FA");
+        } else {
+            return new AuthResponse(jwt, false, "Zalogowano przez Email");
+        }
     }
 
     // === ⭐️ NOWA LOGIKA DLA ENDPOINTÓW 2FA (Przeniesiona z server.js) ⭐️ ===
 
-    public boolean getTwoFaStatus(String googleToken) throws Exception {
-        User user = verifyGoogleTokenAndGetUser(googleToken);
+    public boolean getTwoFaStatus(String jwtToken) throws Exception { User user = getUserFromJwt(jwtToken);
         return user.isTwoFactorEnabled();
     }
 
-    public TwoFaSetupResponse setupTwoFa(String googleToken) throws Exception {
-        User user = verifyGoogleTokenAndGetUser(googleToken);
+    public TwoFaSetupResponse setupTwoFa(String jwtToken) throws Exception { User user = getUserFromJwt(jwtToken);
 
         if (user.isTwoFactorEnabled()) {
             return new TwoFaSetupResponse(false, "2FA jest już aktywne. Wyłącz je najpierw.", null);
@@ -174,13 +178,13 @@ public class AuthService {
         return new TwoFaSetupResponse(true, secret, data.getUri());
     }
 
-    public boolean verifyAndEnableTwoFa(String googleToken, String totpCode) throws Exception {
-        User user = verifyGoogleTokenAndGetUser(googleToken);
+    public boolean verifyAndEnableTwoFa(String jwtToken, String totpCode) throws Exception { User user = getUserFromJwt(jwtToken);
 
         if (user.getTwoFactorSecret() == null) {
             throw new IllegalStateException("Sekret 2FA nie został wygenerowany.");
         }
-
+        // ⭐️⭐️ ZMODYFIKOWANE: Użycie nowej metody pomocniczej ⭐️⭐️
+        // Logika weryfikacji została przeniesiona, ale musimy zapisać stan
         if (codeVerifier.isValidCode(user.getTwoFactorSecret(), totpCode)) {
             user.setTwoFactorEnabled(true);
             user.setLastTwoFactorLogin(LocalDateTime.now());
@@ -190,13 +194,13 @@ public class AuthService {
         return false;
     }
 
-    public boolean disableTwoFa(String googleToken, String totpCode) throws Exception {
-        User user = verifyGoogleTokenAndGetUser(googleToken);
+    public boolean disableTwoFa(String jwtToken, String totpCode) throws Exception { User user = getUserFromJwt(jwtToken);
 
         if (!user.isTwoFactorEnabled() || user.getTwoFactorSecret() == null) {
             throw new IllegalStateException("2FA nie jest włączone.");
         }
-
+        // ⭐️⭐️ ZMODYFIKOWANE: Użycie nowej metody pomocniczej ⭐️⭐️
+        // Logika weryfikacji została przeniesiona, ale musimy zapisać stan
         if (codeVerifier.isValidCode(user.getTwoFactorSecret(), totpCode)) {
             user.setTwoFactorEnabled(false);
             user.setTwoFactorSecret(null);
@@ -210,19 +214,8 @@ public class AuthService {
     public LoginResponse loginVerifyTwoFa(String googleToken, String totpCode) throws Exception {
         User user = verifyGoogleTokenAndGetUser(googleToken);
 
-        if (!user.isTwoFactorEnabled() || user.getTwoFactorSecret() == null) {
-            throw new IllegalStateException("2FA nie jest wymagane.");
-        }
-
-        if (codeVerifier.isValidCode(user.getTwoFactorSecret(), totpCode)) {
-            user.setLastTwoFactorLogin(LocalDateTime.now());
-            userRepository.save(user);
-
-            String jwt = jwtService.generateToken(user);
-            return new LoginResponse(jwt);
-        } else {
-            throw new SecurityException("Nieprawidłowy kod 2FA.");
-        }
+        // ⭐️⭐️ ZMODYFIKOWANE: Użycie nowej metody pomocniczej ⭐️⭐️
+        return verify2FaCodeAndGenerateJwt(user, totpCode);
     }
 
     public record AuthResponse(String jwt, boolean requires2FA, String message) {}
@@ -271,4 +264,71 @@ public class AuthService {
         // emailService.sendWelcomeEmail(user.getEmail());
     }
 
+    // ⭐️⭐️ NOWA METODA DO WERYFIKACJI 2FA PO ZALOGOWANIU E-MAILEM ⭐️⭐️
+    public LoginResponse loginVerifyEmailTwoFa(String tempToken, String totpCode) throws Exception {
+        // Krok 1: Użyj JwtService, aby wyodrębnić email z tokena tymczasowego
+        String email = jwtService.extractUsername(tempToken);
+        if (email == null) {
+            throw new SecurityException("Nieprawidłowy token tymczasowy.");
+        }
+
+        // Krok 2: Pobierz użytkownika
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalStateException("Użytkownik z tokena nie znaleziony."));
+
+        // ⭐️⭐️ ZMODYFIKOWANE: Użycie nowej metody pomocniczej ⭐️⭐️
+        return verify2FaCodeAndGenerateJwt(user, totpCode);
+    }
+
+
+    // ⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️
+    // ⭐️⭐️               NOWE METODY POMOCNICZE                 ⭐️⭐️
+    // ⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️
+
+    /**
+     * (Refaktoryzacja) Sprawdza, czy 2FA jest włączone i czy minął 5-minutowy okres karencji.
+     * To jest "Duplikacja 9 linii".
+     */
+    private boolean is2FaRequired(User user) {
+        if (user.isTwoFactorEnabled()) {
+            if (user.getLastTwoFactorLogin() == null ||
+                    user.getLastTwoFactorLogin().isBefore(LocalDateTime.now().minusMinutes(5))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * (Refaktoryzacja) Weryfikuje kod 2FA i zwraca ostateczny LoginResponse z tokenem JWT.
+     * To jest "Duplikacja 11 linii".
+     */
+    private LoginResponse verify2FaCodeAndGenerateJwt(User user, String totpCode) {
+        if (!user.isTwoFactorEnabled() || user.getTwoFactorSecret() == null) {
+            throw new IllegalStateException("2FA nie jest wymagane dla tego użytkownika.");
+        }
+
+        if (codeVerifier.isValidCode(user.getTwoFactorSecret(), totpCode)) {
+            user.setLastTwoFactorLogin(LocalDateTime.now());
+            userRepository.save(user);
+
+            // Wygeneruj NOWY, PEŁNY token JWT.
+            String jwt = jwtService.generateToken(user);
+            return new LoginResponse(jwt);
+        } else {
+            throw new SecurityException("Nieprawidłowy kod 2FA.");
+        }
+    }
+
+    // ⭐️⭐️ NOWA METODA POMOCNICZA ⭐️⭐️
+    private User getUserFromJwt(String jwtToken) {
+        // Używamy JwtService do wyodrębnienia emaila z tokena
+        String email = jwtService.extractUsername(jwtToken);
+        if (email == null) {
+            throw new SecurityException("Nieprawidłowy token JWT.");
+        }
+        // Znajdujemy użytkownika w bazie
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalStateException("Użytkownik z tokena JWT nie znaleziony."));
+    }
 }
