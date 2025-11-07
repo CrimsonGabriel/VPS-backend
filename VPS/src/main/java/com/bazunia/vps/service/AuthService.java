@@ -244,7 +244,7 @@ public class AuthService {
 
         // 5. Wyślij e-mail aktywacyjny (zakładając, że masz EmailService)
         // Musisz zaimplementować EmailService i skonfigurować SMTP w application.properties!
-        String activationLink = "http://TWOJ_ADRES_IP:8080/api/auth/android/activate?token=" + token;
+        String activationLink = "http://testserwera.pl/api/auth/android/activate?token=" + token;
         emailService.sendActivationEmail(user.getEmail(), activationLink);
     }
 
