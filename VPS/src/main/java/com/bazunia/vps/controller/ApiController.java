@@ -12,12 +12,17 @@ import com.bazunia.vps.model.SensorReading;
 import com.bazunia.vps.repository.SensorReadingRepository;
 import com.bazunia.vps.repository.UserRepository;
 import com.bazunia.vps.service.StatusService;
+// ⭐️ POPRAWKA: Dodanie importów
+import com.bazunia.vps.service.UpdateService;
+import org.springframework.security.core.context.SecurityContextHolder;
+// ⭐️ POPRAWKA: Usunięto import java.security.Principal (jeśli istniał)
+
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
+import com.bazunia.vps.service.JwtService;
 
 import java.util.List;
 import java.util.Map;
@@ -33,12 +38,37 @@ public class ApiController {
     private final UserRepository userRepository;
     private final DataService dataService;
 
+    // ⭐️ POPRAWKA: Dodanie brakującego serwisu
+    private final UpdateService updateService;
+    private final JwtService jwtService;
+    // ⭐️ POPRAWKA: Poprawiony konstruktor musi akceptować UpdateService
     @Autowired
-    public ApiController(StatusService statusService, SensorReadingRepository sensorRepository, UserRepository userRepository, DataService dataService) {
+    public ApiController(StatusService statusService,
+                         SensorReadingRepository sensorRepository,
+                         UserRepository userRepository,
+                         DataService dataService,
+                         UpdateService updateService,
+                         JwtService jwtService) { // <-- Dodane
         this.statusService = statusService;
         this.sensorRepository = sensorRepository;
         this.userRepository = userRepository;
         this.dataService = dataService;
+        this.updateService = updateService;
+        this.jwtService = jwtService; // <-- Dodane
+    }
+
+    // ⭐️⭐️⭐️ NOWY ENDPOINT DEBUGUJĄCY ⭐️⭐️⭐️
+    @GetMapping("/debug-key")
+    public ResponseEntity<Map<String, String>> debugJwtKey() {
+        String actualKey = jwtService.getSecretKeyForDebug();
+
+        System.out.println("==========================================================");
+        System.out.println("== DEBUG: KLUCZ, KTÓREGO UŻYWA JwtService ==");
+        System.out.println(actualKey);
+        System.out.println("==========================================================");
+
+        // Zwraca klucz w Base64 (to ten sam, który masz w properties)
+        return ResponseEntity.ok(Map.of("key_in_use", actualKey));
     }
 
     // --- ENDPOINT DLA RASPBERRY PI: REJESTRACJA IP (/register/rasp) ---
@@ -47,13 +77,9 @@ public class ApiController {
         if (!SECRET_PASSWORD.equals(request.password())) {
             return new ResponseEntity<>("Nieprawidłowe hasło", HttpStatus.UNAUTHORIZED);
         }
-
         String clientIp = servletRequest.getRemoteAddr();
-
-        // Zapisujemy IP jako RPi (TO JEST CEL TEGO ENDPOINTU)
         statusService.updateRpiIp(clientIp);
-        statusService.addRpiIp(clientIp); // DEDYKOWANY ZBIÓR DLA IP RPI
-
+        statusService.addRpiIp(clientIp);
         System.out.println("Zarejestrowano IP RPi: " + clientIp + ", Port: " + request.port());
         return ResponseEntity.ok("OK");
     }
@@ -64,14 +90,43 @@ public class ApiController {
         if (!SECRET_PASSWORD.equals(request.password())) {
             return new ResponseEntity<>("Nieprawidłowe hasło", HttpStatus.UNAUTHORIZED);
         }
-
         String clientIp = servletRequest.getRemoteAddr();
-
-
         statusService.addAndroidIp(clientIp);
-
         System.out.println("Zarejestrowano IP Androida: " + clientIp + ", Port: " + request.port());
         return ResponseEntity.ok("OK");
+    }
+
+    // --- ENDPOINTY DLA AKTUALIZACJI ANDROIDA ---
+
+    // 1. ENDPOINT: POBIERANIE STATUSU AKTUALIZACJI (Rozwiązuje 403 na GET /api/update/status)
+    @GetMapping("/api/update/status")
+    public ResponseEntity<Map<String, String>> getUpdateStatus() {
+        // Ta metoda teraz zadziała, bo updateService jest poprawnie wstrzyknięty
+        Map<String, String> statusMap = updateService.getUpdateStatuses();
+        return ResponseEntity.ok(statusMap);
+    }
+
+    // 2. ENDPOINT: DECYZJA UŻYTKOWNIKA (ACCEPTED/DEFERRED) (Rozwiązuje 403 na POST /api/update/decision)
+    // ⭐️ POPRAWKA: Usunięto 'Principal principal' i zastąpiono go SecurityContextHolder
+    @PostMapping("/api/update/decision")
+    public ResponseEntity<String> recordUpdateDecision(
+            @RequestBody Map<String, String> decisionPayload) {
+
+        // 1. Walidacja danych
+        String key = decisionPayload.get("key");
+        String decision = decisionPayload.get("decision");
+
+        // ⭐️ POPRAWKA: Pobieranie emaila użytkownika z kontekstu bezpieczeństwa
+        String userEmail = SecurityContextHolder.getContext().getAuthentication().getName();
+
+        if (key == null || decision == null) {
+            return new ResponseEntity<>("Brak 'key' lub 'decision' w ładunku", HttpStatus.BAD_REQUEST);
+        }
+
+        // 2. Wywołanie logiki UpdateService
+        updateService.recordDecision(userEmail, key, decision);
+
+        return ResponseEntity.ok("Decyzja o aktualizacji (" + decision + ") została zapisana.");
     }
 
     // --- ENDPOINT DLA RASPBERRY PI: DANE (/data) ---
@@ -80,14 +135,9 @@ public class ApiController {
         if (!SECRET_PASSWORD.equals(data.password())) {
             return new ResponseEntity<>("Nieprawidłowe hasło", HttpStatus.UNAUTHORIZED);
         }
-
         String clientIp = request.getRemoteAddr();
-
-        // Aktualizacja czasu meldunku i IP RPi
-
         statusService.updateRpiIp(clientIp);
-        statusService.addRpiIp(clientIp); // DEDYKOWANY ZBIÓR DLA IP RPI
-
+        statusService.addRpiIp(clientIp);
         data.sensors().stream()
                 .map(s -> new SensorReading(
                         null,
@@ -98,7 +148,6 @@ public class ApiController {
                         s.getTimestamp()
                 ))
                 .forEach(sensorRepository::save);
-
         return ResponseEntity.ok("OK");
     }
 
@@ -108,13 +157,14 @@ public class ApiController {
         if (!SECRET_PASSWORD.equals(request.password())) {
             return new ResponseEntity<>("Nieprawidłowe hasło", HttpStatus.UNAUTHORIZED);
         }
-
+        // Używamy .text() zgodnie z poprawką w UpdateRequest.java
         statusService.updateLastReport(request.text());
-
         return ResponseEntity.ok("OK");
     }
 
-    // --- POZOSTAŁE METODY BEZ ZMIAN ---
+    // --- POZOSTAŁE ENDPOINTY (BEZ ZMIAN) ---
+
+    // Endpoint do pobierania danych przez autoryzowanego użytkownika (Android)
     @GetMapping("/data/android")
     public ResponseEntity<Map<String, List<SensorReading>>> getSensorData() {
         List<SensorReading> readings = sensorRepository.findTop10ByOrderByTimestampDesc();
@@ -122,7 +172,8 @@ public class ApiController {
         return ResponseEntity.ok(response);
     }
 
-    @DeleteMapping("/data/history/delete")
+    // Endpoint do usuwania historii (dostępny tylko dla ADMINA)
+    @DeleteMapping("/api/data/history/delete")
     public ResponseEntity<Map<String, Boolean>> deleteSensorHistory() {
         dataService.deleteAllSensorReadings();
         return ResponseEntity.ok(Map.of("success", true));
@@ -152,7 +203,7 @@ public class ApiController {
         return new StatusResponse(
                 statusService.getLastReportText(),
                 statusService.getRegisteredRPiIp(),
-                statusService.getUniqueAndroidIPs(), // ZBIÓR TYLKO IP ANDROIDA
+                statusService.getUniqueAndroidIPs(),
                 authorizedUsersList,
                 users2FAStatusMap
         );
