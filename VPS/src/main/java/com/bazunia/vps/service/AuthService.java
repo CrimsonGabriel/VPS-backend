@@ -17,7 +17,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.crypto.password.PasswordEncoder;
 import com.bazunia.vps.dto.EmailRegistrationRequest;
 import org.springframework.stereotype.Service;
-
+import com.bazunia.vps.dto.UserDetailsResponse;
 // Importy dla 2FA
 import dev.samstevens.totp.code.CodeVerifier;
 import dev.samstevens.totp.qr.QrData;
@@ -395,5 +395,18 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);
         logger.info("Hasło zostało pomyślnie zmienione dla użytkownika: " + user.getEmail());
+    }
+    /**
+     * Pobiera podstawowe dane zalogowanego użytkownika (email i name).
+     *
+     * @param jwtToken Token JWT zalogowanego użytkownika
+     * @return Obiekt DTO z danymi użytkownika
+     */
+    public UserDetailsResponse getUserDetails(String jwtToken) {
+        // Używamy istniejącej metody pomocniczej do znalezienia użytkownika
+        User user = getUserFromJwt(jwtToken);
+
+        // Zwracamy nowy, prosty obiekt DTO
+        return new UserDetailsResponse(user.getEmail(), user.getName());
     }
 }

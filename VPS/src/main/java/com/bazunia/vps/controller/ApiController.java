@@ -10,6 +10,7 @@ import com.bazunia.vps.dto.StatusResponse;
 import com.bazunia.vps.dto.UpdateRequest;
 import com.bazunia.vps.dto.SetPasswordRequest;
 import com.bazunia.vps.dto.ChangePasswordRequest;
+import com.bazunia.vps.dto.UserDetailsResponse;
 import com.bazunia.vps.model.SensorReading;
 import com.bazunia.vps.repository.SensorReadingRepository;
 import com.bazunia.vps.repository.UserRepository;
@@ -218,6 +219,23 @@ public class ApiController {
         }
     }
     /**
+     * Zwraca dane (email, name) aktualnie zalogowanego użytkownika.
+     */
+    @GetMapping("/api/user/me")
+    public ResponseEntity<?> getUserDetails(
+            @RequestHeader("Authorization") String authHeader) {
+
+        try {
+            String jwtToken = extractJwtFromHeader(authHeader);
+            UserDetailsResponse userDetails = authService.getUserDetails(jwtToken);
+            return ResponseEntity.ok(userDetails);
+
+        } catch (Exception e) {
+            // Obsługa błędów, np. wygaśnięty token lub brak użytkownika
+            return new ResponseEntity<>(Map.of("error", "Błąd pobierania danych użytkownika: " + e.getMessage()), HttpStatus.UNAUTHORIZED);
+        }
+    }
+    /**
      * Zmienia hasło zalogowanego użytkownika.
      * Wymaga podania obecnego hasła do weryfikacji.
      */
@@ -287,5 +305,13 @@ public class ApiController {
                 authorizedUsersList,
                 users2FAStatusMap
         );
+    }
+    // ⭐️⭐️ DODAJ TĘ METODĘ POMOCNICZĄ ⭐️⭐️
+    private String extractJwtFromHeader(String authHeader) {
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            return authHeader.substring(7);
+        }
+        // Rzucamy wyjątek, jeśli nagłówek jest nieprawidłowy
+        throw new IllegalArgumentException("Brak lub nieprawidłowy nagłówek Authorization.");
     }
 }

@@ -58,6 +58,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/user/set-password").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/user/change-password").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/user/me").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/api/files/**").hasRole("ADMIN")
                         .requestMatchers("/api/files/**").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/api/data/history/delete").hasRole("ADMIN")
