@@ -127,6 +127,50 @@ public class AuthController {
         }
     }
 
+    // ⭐️⭐️ NOWY ENDPOINT ⭐️⭐️
+    /**
+     * Publiczny endpoint do żądania resetowania hasła.
+     * Zawsze zwraca 200 OK, aby zapobiec atakom "user enumeration".
+     */
+    @PostMapping("/request-password-reset")
+    public ResponseEntity<?> requestPasswordReset(@RequestBody RequestPasswordResetRequest request) {
+        try {
+            authService.requestPasswordReset(request.email());
+
+            // Zawsze zwracaj 200 OK, nawet jeśli e-mail nie istnieje.
+            return ResponseEntity.ok(Map.of("message", "Request processed."));
+
+        } catch (Exception e) {
+            // Złap ewentualne błędy (np. błąd wysyłania e-maila)
+            controllerLogger.severe("Krytyczny błąd podczas prośby o reset hasła: " + e.getMessage());
+            // Mimo to, dla klienta udajemy, że jest OK.
+            return ResponseEntity.ok(Map.of("message", "Request processed with internal error."));
+        }
+    }
+
+
+    /**
+     * Publiczny endpoint do finalizowania resetowania hasła.
+     * Przyjmuje token i nowe hasło.
+     */
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
+        try {
+            authService.resetPassword(request.token(), request.newPassword());
+
+            // Sukces - hasło zostało zmienione
+            return ResponseEntity.ok(Map.of("message", "Hasło zostało pomyślnie zresetowane."));
+
+        } catch (IllegalArgumentException e) {
+            // Błąd (np. token wygasł, zły token, za krótkie hasło)
+            // Zwracamy 400 Bad Request z wiadomością błędu
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            controllerLogger.severe("Krytyczny błąd podczas resetowania hasła: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Wystąpił wewnętrzny błąd serwera."));
+        }
+    }
 
     // --- ENDPOINTY 2FA ---
     // Pełna ścieżka: /api/auth/2fa/status

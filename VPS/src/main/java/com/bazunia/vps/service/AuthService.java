@@ -24,6 +24,7 @@ import dev.samstevens.totp.qr.QrData;
 import dev.samstevens.totp.secret.SecretGenerator;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.Collections;
 import java.util.UUID;
 
@@ -408,5 +409,80 @@ public class AuthService {
 
         // Zwracamy nowy, prosty obiekt DTO
         return new UserDetailsResponse(user.getEmail(), user.getName());
+    }
+// ⭐️⭐️ NOWA METODA ⭐️⭐️
+    /**
+     * Rozpoczyna proces resetowania hasła dla użytkownika.
+     * Znajduje użytkownika, generuje token i wysyła e-mail.
+     * Celowo nie rzuca błędu, jeśli e-mail nie istnieje, aby zapobiec
+     * wyliczeniu użytkowników (user enumeration).
+     *
+     * @param email E-mail podany przez użytkownika.
+     */
+    public void requestPasswordReset(String email) {
+        // Krok 1: Znajdź użytkownika
+        Optional<User> userOptional = userRepository.findByEmail(email);
+
+        // Krok 2: Jeśli użytkownik nie istnieje LUB jest nieaktywny,
+        // cicho zakończ operację. Nie informuj klienta o błędzie.
+        if (userOptional.isEmpty() || !userOptional.get().isEnabled()) {
+            logger.warning("Prośba o reset hasła dla nieistniejącego lub nieaktywnego e-maila: " + email);
+            return; // Ciche wyjście
+        }
+
+        User user = userOptional.get();
+
+        // Krok 3: Wygeneruj token i datę wygaśnięcia
+        String token = UUID.randomUUID().toString();
+        user.setPasswordResetToken(token);
+        user.setPasswordResetTokenExpiry(LocalDateTime.now().plusHours(1)); // Ważny 1 godzinę
+
+        // Krok 4: Zapisz token w bazie
+        userRepository.save(user);
+
+        // Krok 5: Wyślij e-mail
+
+        String resetLink = "https://testserwera.pl/reset-password?token=" + token;
+
+        emailService.sendPasswordResetEmail(user.getEmail(), resetLink);
+
+        logger.info("Pomyślnie wygenerowano i wysłano link resetujący dla: " + email);
+    }
+
+    // ⭐️⭐️ NOWA METODA ⭐️⭐️
+    /**
+     * Weryfikuje token resetujący i ustawia nowe hasło dla użytkownika.
+     *
+     * @param token       Token z linku e-mail.
+     * @param newPassword Nowe hasło podane przez użytkownika.
+     * @throws IllegalArgumentException jeśli token jest nieprawidłowy, wygasł lub hasło jest za krótkie.
+     */
+    public void resetPassword(String token, String newPassword) {
+        // Krok 1: Znajdź użytkownika po tokenie
+        User user = userRepository.findByPasswordResetToken(token)
+                .orElseThrow(() -> new IllegalArgumentException("Nieprawidłowy lub już użyty token."));
+
+        // Krok 2: Sprawdź, czy token nie wygasł
+        if (user.getPasswordResetTokenExpiry() == null || user.getPasswordResetTokenExpiry().isBefore(LocalDateTime.now())) {
+            // Dodatkowo wyczyść token, jeśli wygasł
+            user.setPasswordResetToken(null);
+            user.setPasswordResetTokenExpiry(null);
+            userRepository.save(user);
+            throw new IllegalArgumentException("Token resetujący wygasł. Poproś o nowy link.");
+        }
+
+        // Krok 3: Sprawdź siłę nowego hasła
+        if (newPassword == null || newPassword.length() < 8) {
+            throw new IllegalArgumentException("Hasło musi mieć co najmniej 8 znaków.");
+        }
+
+        // Krok 4: Ustaw nowe hasło i unieważnij token
+        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setPasswordResetToken(null); // Użyty token staje się nieważny
+        user.setPasswordResetTokenExpiry(null);
+
+        userRepository.save(user);
+
+        logger.info("Hasło zostało pomyślnie zresetowane dla: " + user.getEmail());
     }
 }

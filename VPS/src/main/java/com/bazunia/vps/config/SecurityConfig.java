@@ -43,11 +43,13 @@ public class SecurityConfig {
                         // Endpointy publiczne (RPi, Logowanie, Status)
                         .requestMatchers("/register/rasp", "/register/android", "/update", "/data").permitAll()
 
-                        // ⭐️ ZEZWOLENIE NA NOWE ENDPOINTY ⭐️
+
                         // /api/auth/login jest już pokryte przez /api/auth/**
                         .requestMatchers("/api/auth/android/register").permitAll()
                         .requestMatchers("/api/auth/android/activate").permitAll()
-                        // ⭐️ KONIEC ZMIAN ⭐️
+                        .requestMatchers("/api/auth/request-password-reset").permitAll()
+                        .requestMatchers("/api/auth/reset-password").permitAll()
+
 
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/auth/**", "/2fa/**").permitAll()

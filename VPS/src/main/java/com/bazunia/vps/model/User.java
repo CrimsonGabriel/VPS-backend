@@ -36,13 +36,17 @@ public class User implements UserDetails { // Implementujemy UserDetails dla Spr
     private boolean twoFactorEnabled = false;
     private LocalDateTime lastTwoFactorLogin;
 
-    // ⭐️ NOWE POLA DLA AKTYWACJI E-MAIL ⭐️
+
     @Column(nullable = false)
     private boolean enabled = false; // Domyślnie konto jest NIEAKTYWNE
 
     @Column(unique = true)
     private String activationToken; // Token do aktywacji e-mail
 
+    @Column(unique = true)
+    private String passwordResetToken;
+
+    private LocalDateTime passwordResetTokenExpiry;
     // --- Magia Spring Security ---
 
     @Override
