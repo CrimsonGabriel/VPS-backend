@@ -1,4 +1,4 @@
-// 💾 ApiController.java (Ostateczna Logika)
+// Plik: com/bazunia/vps/controller/ApiController.java
 package com.bazunia.vps.controller;
 
 import com.bazunia.vps.dto.TwoFaStatusDto;
@@ -9,6 +9,7 @@ import com.bazunia.vps.dto.RegistrationRequest;
 import com.bazunia.vps.dto.StatusResponse;
 import com.bazunia.vps.dto.UpdateRequest;
 import com.bazunia.vps.dto.SetPasswordRequest;
+import com.bazunia.vps.dto.ChangePasswordRequest;
 import com.bazunia.vps.model.SensorReading;
 import com.bazunia.vps.repository.SensorReadingRepository;
 import com.bazunia.vps.repository.UserRepository;
@@ -216,7 +217,49 @@ public class ApiController {
             return new ResponseEntity<>(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
+    /**
+     * Zmienia hasło zalogowanego użytkownika.
+     * Wymaga podania obecnego hasła do weryfikacji.
+     */
+    @PostMapping("/api/user/change-password")
+    public ResponseEntity<?> changeUserPassword(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody ChangePasswordRequest request) {
 
+        try {
+            // Wyciągamy token JWT z nagłówka
+            String jwtToken = null;
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                jwtToken = authHeader.substring(7);
+            }
+            if (jwtToken == null) {
+                return new ResponseEntity<>(Map.of("error", "Brak tokena JWT"), HttpStatus.UNAUTHORIZED);
+            }
+
+            // Wywołujemy nową metodę z AuthService
+            authService.changeUserPassword(
+                    jwtToken,
+                    request.currentPassword(),
+                    request.newPassword()
+            );
+
+            // Sukces
+            return ResponseEntity.ok(Map.of("message", "Hasło zmienione pomyślnie."));
+
+        } catch (SecurityException e) {
+            // Z AuthService: nieprawidłowe obecne hasło
+            return new ResponseEntity<>(Map.of("error", e.getMessage()), HttpStatus.FORBIDDEN); // 403
+        } catch (IllegalArgumentException e) {
+            // Z AuthService: nowe hasło za krótkie
+            return new ResponseEntity<>(Map.of("error", e.getMessage()), HttpStatus.BAD_REQUEST); // 400
+        } catch (IllegalStateException e) {
+            // Z AuthService: użytkownik Google bez hasła
+            return new ResponseEntity<>(Map.of("error", e.getMessage()), HttpStatus.CONFLICT); // 409
+        } catch (Exception e) {
+            // Inne błędy
+            return new ResponseEntity<>(Map.of("error", "Wystąpił wewnętrzny błąd serwera: " + e.getMessage()), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
     @GetMapping("/")
     public String getRootStatus() {
         return "Serwer VPS (Spring Boot) działa!";

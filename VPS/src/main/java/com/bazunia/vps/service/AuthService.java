@@ -359,4 +359,41 @@ public class AuthService {
         userRepository.save(user);
         logger.info("Hasło zostało pomyślnie ustawione dla użytkownika: " + user.getEmail());
     }
+    // ⭐️⭐️ NOWA METODA ⭐️⭐️
+    /**
+     * Zmienia hasło uwierzytelnionego użytkownika.
+     * Wymaga podania obecnego hasła w celu weryfikacji.
+     *
+     * @param jwtToken        Token JWT zalogowanego użytkownika
+     * @param currentPassword Obecne (stare) hasło do weryfikacji
+     * @param newPassword     Nowe hasło do ustawienia
+     * @throws SecurityException        jeśli obecne hasło jest nieprawidłowe
+     * @throws IllegalArgumentException jeśli nowe hasło jest za krótkie
+     * @throws IllegalStateException    jeśli użytkownik (np. Google) nie ma ustawionego hasła
+     */
+    public void changeUserPassword(String jwtToken, String currentPassword, String newPassword) {
+        // Krok 1: Znajdź użytkownika na podstawie tokena
+        User user = getUserFromJwt(jwtToken);
+
+        // Krok 2: Sprawdź, czy użytkownik w ogóle ma ustawione hasło
+        if (user.getPassword() == null) {
+            // Użytkownik zalogowany przez Google, który nigdy nie ustawił hasła
+            throw new IllegalStateException("Użytkownik nie ma ustawionego hasła, którego można by użyć do weryfikacji.");
+        }
+
+        // Krok 3: Zweryfikuj obecne hasło
+        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+            throw new SecurityException("Nieprawidłowe obecne hasło.");
+        }
+
+        // Krok 4: Zweryfikuj nowe hasło (np. długość)
+        if (newPassword == null || newPassword.length() < 8) {
+            throw new IllegalArgumentException("Nowe hasło jest za krótkie (minimum 8 znaków).");
+        }
+
+        // Krok 5: Jeśli wszystko OK, zakoduj i zapisz nowe hasło
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+        logger.info("Hasło zostało pomyślnie zmienione dla użytkownika: " + user.getEmail());
+    }
 }

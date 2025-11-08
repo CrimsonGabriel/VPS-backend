@@ -57,6 +57,7 @@ public class SecurityConfig {
                         // --- CHRONIONE ENDPOINTY (BEZ ZMIAN) ---
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/user/set-password").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/user/change-password").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/api/files/**").hasRole("ADMIN")
                         .requestMatchers("/api/files/**").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/api/data/history/delete").hasRole("ADMIN")
