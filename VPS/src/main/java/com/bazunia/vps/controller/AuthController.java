@@ -56,7 +56,7 @@ public class AuthController {
         String token = extractGoogleToken(authHeader, body);
         if (token == null) {
             controllerLogger.warning("Brak tokena w żądaniu /api/auth/google.");
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new AuthService.AuthResponse(null, false, "Brak tokena"));
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new AuthService.AuthResponse(null, false, "Brak tokena", false));
         }
 
         try {
@@ -64,7 +64,7 @@ public class AuthController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             controllerLogger.warning("Błąd w loginWithGoogle: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new AuthService.AuthResponse(null, false, e.getMessage()));
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new AuthService.AuthResponse(null, false, e.getMessage(), false));
         }
     }
 

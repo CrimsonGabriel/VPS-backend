@@ -8,14 +8,15 @@ import com.bazunia.vps.dto.DataRequest;
 import com.bazunia.vps.dto.RegistrationRequest;
 import com.bazunia.vps.dto.StatusResponse;
 import com.bazunia.vps.dto.UpdateRequest;
+import com.bazunia.vps.dto.SetPasswordRequest;
 import com.bazunia.vps.model.SensorReading;
 import com.bazunia.vps.repository.SensorReadingRepository;
 import com.bazunia.vps.repository.UserRepository;
 import com.bazunia.vps.service.StatusService;
-// ⭐️ POPRAWKA: Dodanie importów
 import com.bazunia.vps.service.UpdateService;
+import com.bazunia.vps.service.AuthService;
 import org.springframework.security.core.context.SecurityContextHolder;
-// ⭐️ POPRAWKA: Usunięto import java.security.Principal (jeśli istniał)
+
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,23 +39,24 @@ public class ApiController {
     private final UserRepository userRepository;
     private final DataService dataService;
 
-    // ⭐️ POPRAWKA: Dodanie brakującego serwisu
+
     private final UpdateService updateService;
     private final JwtService jwtService;
-    // ⭐️ POPRAWKA: Poprawiony konstruktor musi akceptować UpdateService
+    private final AuthService authService;
     @Autowired
     public ApiController(StatusService statusService,
                          SensorReadingRepository sensorRepository,
                          UserRepository userRepository,
                          DataService dataService,
                          UpdateService updateService,
-                         JwtService jwtService) { // <-- Dodane
+                         JwtService jwtService, AuthService authService) {
         this.statusService = statusService;
         this.sensorRepository = sensorRepository;
         this.userRepository = userRepository;
         this.dataService = dataService;
         this.updateService = updateService;
-        this.jwtService = jwtService; // <-- Dodane
+        this.jwtService = jwtService;
+        this.authService = authService;
     }
 
     // ⭐️⭐️⭐️ NOWY ENDPOINT DEBUGUJĄCY ⭐️⭐️⭐️
@@ -179,6 +181,41 @@ public class ApiController {
         return ResponseEntity.ok(Map.of("success", true));
     }
 
+    // ⭐️⭐️ NOWY ENDPOINT ⭐️⭐️
+    /**
+     * Ustawia hasło użytkownika.
+     * Endpoint jest chroniony i wymaga ważnego tokena JWT.
+     */
+    @PostMapping("/api/user/set-password")
+    public ResponseEntity<?> setUserPassword(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody SetPasswordRequest request) {
+
+        try {
+            // Wyciągamy token JWT z nagłówka
+            String jwtToken = null;
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                jwtToken = authHeader.substring(7);
+            }
+
+            if (jwtToken == null) {
+                return new ResponseEntity<>("Brak tokena JWT", HttpStatus.UNAUTHORIZED);
+            }
+
+            // Używamy AuthService do ustawienia hasła
+            // Ta metoda sama zweryfikuje token i znajdzie użytkownika
+            authService.setUserPassword(jwtToken, request.newPassword());
+
+            return ResponseEntity.ok(Map.of("message", "Hasło ustawione pomyślnie."));
+
+        } catch (IllegalStateException e) {
+            return new ResponseEntity<>(e.getMessage(), HttpStatus.CONFLICT); // Np. "Ma już hasło"
+        } catch (IllegalArgumentException e) {
+            return new ResponseEntity<>(e.getMessage(), HttpStatus.BAD_REQUEST); // Np. "Za krótkie"
+        } catch (Exception e) {
+            return new ResponseEntity<>(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
 
     @GetMapping("/")
     public String getRootStatus() {
