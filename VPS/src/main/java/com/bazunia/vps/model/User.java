@@ -9,44 +9,55 @@ import org.springframework.security.core.userdetails.UserDetails;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Set; // <<< ZMIANA: Dodano import
 
 @Data
 @Entity
 @Table(name = "app_users")
-public class User implements UserDetails { // Implementujemy UserDetails dla Spring Security
+public class User implements UserDetails {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(unique = true, nullable = false)
-    private String email; // Będzie służył jako "username"
+    private String email;
 
-    private String name; // Imię (z Google, opcjonalne)
+    private String name;
 
     @Column(nullable = true)
-    private String password; // Będzie przechowywać HASH!
+    private String password;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role = Role.USER;
 
-    // Pola 2FA (zostawiamy, jak były)
     private String twoFactorSecret;
     private boolean twoFactorEnabled = false;
     private LocalDateTime lastTwoFactorLogin;
 
-
     @Column(nullable = false)
-    private boolean enabled = false; // Domyślnie konto jest NIEAKTYWNE
+    private boolean enabled = false;
 
     @Column(unique = true)
-    private String activationToken; // Token do aktywacji e-mail
+    private String activationToken;
 
     @Column(unique = true)
     private String passwordResetToken;
 
     private LocalDateTime passwordResetTokenExpiry;
+
+    // --- Relacje dodane dla nowych tabel ---
+
+    // <<< ZMIANA: Bramki, których ten użytkownik jest właścicielem
+    @OneToMany(mappedBy = "owner", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<Gateway> ownedGateways;
+
+    // <<< ZMIANA: Uprawnienia (udostępnienia) dla tego użytkownika
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<UserGatewayPermission> gatewayPermissions;
+
+
     // --- Magia Spring Security ---
 
     @Override
@@ -70,7 +81,6 @@ public class User implements UserDetails { // Implementujemy UserDetails dla Spr
 
     @Override
     public boolean isEnabled() {
-        // ⭐️ ZMODYFIKOWANE: Spring Security będzie teraz sprawdzać to pole ⭐️
         return this.enabled;
     }
 }

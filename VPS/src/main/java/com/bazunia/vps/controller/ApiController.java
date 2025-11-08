@@ -17,6 +17,12 @@ import com.bazunia.vps.repository.UserRepository;
 import com.bazunia.vps.service.StatusService;
 import com.bazunia.vps.service.UpdateService;
 import com.bazunia.vps.service.AuthService;
+
+import com.bazunia.vps.model.Gateway;
+import com.bazunia.vps.model.Sensor;
+import com.bazunia.vps.repository.GatewayRepository;
+import com.bazunia.vps.repository.SensorRepository;
+
 import org.springframework.security.core.context.SecurityContextHolder;
 
 
@@ -37,28 +43,39 @@ public class ApiController {
     private static final String SECRET_PASSWORD = "ZMIEN_TO_HASLO_XD";
 
     private final StatusService statusService;
-    private final SensorReadingRepository sensorRepository;
+    // <<< ZMIANA 1: Zmiana nazwy zmiennej, aby uniknąć konfliktu
+    private final SensorReadingRepository sensorReadingRepository;
     private final UserRepository userRepository;
     private final DataService dataService;
+
+    private final GatewayRepository gatewayRepository;
+    private final SensorRepository sensorRepository; // Ta nazwa jest OK
 
 
     private final UpdateService updateService;
     private final JwtService jwtService;
     private final AuthService authService;
+
     @Autowired
     public ApiController(StatusService statusService,
-                         SensorReadingRepository sensorRepository,
+                         // <<< ZMIANA 2: Zmiana nazwy parametru w konstruktorze
+                         SensorReadingRepository sensorReadingRepository,
                          UserRepository userRepository,
                          DataService dataService,
                          UpdateService updateService,
-                         JwtService jwtService, AuthService authService) {
+                         JwtService jwtService, AuthService authService,
+                         GatewayRepository gatewayRepository,
+                         SensorRepository sensorRepository) {
         this.statusService = statusService;
-        this.sensorRepository = sensorRepository;
+        // <<< ZMIANA 3: Poprawne przypisanie
+        this.sensorReadingRepository = sensorReadingRepository;
         this.userRepository = userRepository;
         this.dataService = dataService;
         this.updateService = updateService;
         this.jwtService = jwtService;
         this.authService = authService;
+        this.gatewayRepository = gatewayRepository;
+        this.sensorRepository = sensorRepository;
     }
 
     // ⭐️⭐️⭐️ NOWY ENDPOINT DEBUGUJĄCY ⭐️⭐️⭐️
@@ -142,16 +159,31 @@ public class ApiController {
         String clientIp = request.getRemoteAddr();
         statusService.updateRpiIp(clientIp);
         statusService.addRpiIp(clientIp);
-        data.sensors().stream()
-                .map(s -> new SensorReading(
-                        null,
-                        s.getGatewayId(),
-                        s.getSensorId(),
-                        s.getType(),
-                        s.getValue(),
-                        s.getTimestamp()
-                ))
-                .forEach(sensorRepository::save);
+
+        try {
+            for (var sensorDto : data.sensors()) {
+                Long gatewayId = sensorDto.getGateway().getId();
+                Long sensorId = sensorDto.getSensor().getId();
+
+                Gateway gateway = gatewayRepository.findById(gatewayId)
+                        .orElseThrow(() -> new RuntimeException("Nie znaleziono bramki o ID: " + gatewayId));
+
+                Sensor sensor = sensorRepository.findById(sensorId)
+                        .orElseThrow(() -> new RuntimeException("Nie znaleziono czujnika o ID: " + sensorId));
+
+                SensorReading newReading = new SensorReading();
+                newReading.setGateway(gateway);
+                newReading.setSensor(sensor);
+                newReading.setValue(sensorDto.getValue());
+                newReading.setTimestamp(sensorDto.getTimestamp());
+
+                // <<< ZMIANA 4: Zapis do WŁAŚCIWEGO repozytorium (naprawa błędu Incompatible types)
+                sensorReadingRepository.save(newReading);
+            }
+        } catch (RuntimeException e) {
+            return new ResponseEntity<>("Błąd przetwarzania danych: " + e.getMessage(), HttpStatus.BAD_REQUEST);
+        }
+
         return ResponseEntity.ok("OK");
     }
 
@@ -171,7 +203,8 @@ public class ApiController {
     // Endpoint do pobierania danych przez autoryzowanego użytkownika (Android)
     @GetMapping("/data/android")
     public ResponseEntity<Map<String, List<SensorReading>>> getSensorData() {
-        List<SensorReading> readings = sensorRepository.findTop10ByOrderByTimestampDesc();
+        // <<< ZMIANA 5: Użycie WŁAŚCIWEGO repozytorium
+        List<SensorReading> readings = sensorReadingRepository.findTop10ByOrderByTimestampDesc();
         Map<String, List<SensorReading>> response = Map.of("sensors", readings);
         return ResponseEntity.ok(response);
     }

@@ -7,8 +7,6 @@ import java.util.List; // Import potrzebny dla List
 
 public interface SensorReadingRepository extends JpaRepository<SensorReading, Long> {
 
-    // --- NOWA METODA (Zamiast findAll()) ---
-    // Nazwa metody mówi Spring Data JPA, co ma zrobić:
-    // "Znajdź top 10 rekordów, posortowane malejąco po timestamp"
+
     List<SensorReading> findTop10ByOrderByTimestampDesc();
 }

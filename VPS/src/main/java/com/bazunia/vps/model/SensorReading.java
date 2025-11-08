@@ -1,10 +1,6 @@
 package com.bazunia.vps.model;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Column;
+import jakarta.persistence.*; // <<< ZMIANA (importy)
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
@@ -19,13 +15,18 @@ public class SensorReading {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String gatewayId;
-    private String sensorId;
-    private String type;
 
-    // --- POPRAWKA TUTAJ ---
-    @Column(name = "sensor_value") // Mówi Springowi, by w bazie SQL ta kolumna nazywała się "sensor_value"
-    private String value; // W kodzie Java nadal możesz używać "value"
+
+    @ManyToOne // <<< ZMIANA: Relacja do bramki
+    @JoinColumn(name = "gateway_id", nullable = false) // <<< ZMIANA
+    private Gateway gateway; // <<< ZMIANA
+
+    @ManyToOne // <<< ZMIANA: Relacja do czujnika
+    @JoinColumn(name = "sensor_id", nullable = false) // <<< ZMIANA
+    private Sensor sensor; // <<< ZMIANA
+
+    @Column(name = "sensor_value")
+    private String value;
 
     private long timestamp;
 }
