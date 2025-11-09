@@ -11,13 +11,16 @@ import com.bazunia.vps.dto.UpdateRequest;
 import com.bazunia.vps.dto.SetPasswordRequest;
 import com.bazunia.vps.dto.ChangePasswordRequest;
 import com.bazunia.vps.dto.UserDetailsResponse;
+import com.bazunia.vps.dto.BatteryUpdateRequest;
+import com.bazunia.vps.dto.SimpleDataRequest;
+import com.bazunia.vps.dto.SimpleSensorReadingDto;
 import com.bazunia.vps.model.SensorReading;
 import com.bazunia.vps.repository.SensorReadingRepository;
 import com.bazunia.vps.repository.UserRepository;
 import com.bazunia.vps.service.StatusService;
 import com.bazunia.vps.service.UpdateService;
 import com.bazunia.vps.service.AuthService;
-
+import org.springframework.transaction.annotation.Transactional;
 import com.bazunia.vps.model.Gateway;
 import com.bazunia.vps.model.Sensor;
 import com.bazunia.vps.repository.GatewayRepository;
@@ -117,6 +120,54 @@ public class ApiController {
         return ResponseEntity.ok("OK");
     }
 
+    /**
+     * Nowy endpoint do masowej aktualizacji stanu baterii czujników.
+     * Chroniony przez SECRET_PASSWORD, tak jak /data.
+     */
+    @PostMapping("/api/sensors/battery")
+    @Transactional // Ważne: zapewnia, że wszystkie aktualizacje albo przejdą, albo żadna
+    public ResponseEntity<String> updateBatteryStatuses(
+            @RequestBody BatteryUpdateRequest request) {
+
+        // 1. Sprawdź hasło
+        if (!SECRET_PASSWORD.equals(request.password())) {
+            return new ResponseEntity<>("Nieprawidłowe hasło", HttpStatus.UNAUTHORIZED);
+        }
+
+        if (request.statuses() == null || request.statuses().isEmpty()) {
+            return new ResponseEntity<>("Brak statusów do aktualizacji", HttpStatus.BAD_REQUEST);
+        }
+
+        int updatedCount = 0;
+        int notFoundCount = 0;
+
+        // 2. Iteruj i aktualizuj
+        for (var statusDto : request.statuses()) {
+            if (statusDto.sensorId() == null || statusDto.level() == null) {
+                continue; // Pomiń niekompletne dane
+            }
+
+            // Użyj repozytorium sensorRepository, które już masz wstrzyknięte
+            var sensorOpt = sensorRepository.findById(statusDto.sensorId());
+
+            if (sensorOpt.isPresent()) {
+                Sensor sensor = sensorOpt.get();
+                sensor.setBatteryLevel(statusDto.level());
+                sensorRepository.save(sensor); // Zapisz zmiany
+                updatedCount++;
+            } else {
+                notFoundCount++;
+            }
+        }
+
+        String message = "Zaktualizowano baterię dla " + updatedCount + " czujników.";
+        if (notFoundCount > 0) {
+            message += " Nie znaleziono " + notFoundCount + " czujników.";
+        }
+
+        return ResponseEntity.ok(message);
+    }
+
     // --- ENDPOINTY DLA AKTUALIZACJI ANDROIDA ---
 
     // 1. ENDPOINT: POBIERANIE STATUSU AKTUALIZACJI (Rozwiązuje 403 na GET /api/update/status)
@@ -150,9 +201,11 @@ public class ApiController {
         return ResponseEntity.ok("Decyzja o aktualizacji (" + decision + ") została zapisana.");
     }
 
-    // --- ENDPOINT DLA RASPBERRY PI: DANE (/data) ---
+
+// --- ENDPOINT DLA RASPBERRY PI: DANE (/data) ---
+// <<< ZMIANA: Cała metoda przepisana, aby używać SimpleDataRequest
     @PostMapping("/data")
-    public ResponseEntity<String> postData(@RequestBody DataRequest data, HttpServletRequest request) {
+    public ResponseEntity<String> postData(@RequestBody SimpleDataRequest data, HttpServletRequest request) {
         if (!SECRET_PASSWORD.equals(data.password())) {
             return new ResponseEntity<>("Nieprawidłowe hasło", HttpStatus.UNAUTHORIZED);
         }
@@ -161,26 +214,39 @@ public class ApiController {
         statusService.addRpiIp(clientIp);
 
         try {
+            // Iterujemy po nowym, prostym DTO
             for (var sensorDto : data.sensors()) {
-                Long gatewayId = sensorDto.getGateway().getId();
-                Long sensorId = sensorDto.getSensor().getId();
 
+                // Pobieramy ID z płaskiej struktury
+                Long gatewayId = Long.parseLong(sensorDto.gateway_id());
+                Long sensorId = Long.parseLong(sensorDto.sensor_id());
+
+                // 1. Znajdź bramkę
                 Gateway gateway = gatewayRepository.findById(gatewayId)
                         .orElseThrow(() -> new RuntimeException("Nie znaleziono bramki o ID: " + gatewayId));
 
+                // 2. Oznacz bramkę jako "online"
+                gateway.setStatus("online");
+                gateway.setLastSeen(java.time.LocalDateTime.now());
+                gatewayRepository.save(gateway); // Zapisujemy zaktualizowany status
+
+                // 3. Znajdź czujnik
                 Sensor sensor = sensorRepository.findById(sensorId)
                         .orElseThrow(() -> new RuntimeException("Nie znaleziono czujnika o ID: " + sensorId));
 
+                // 4. Stwórz i zapisz odczyt (teraz to trafi do sensor_reading)
                 SensorReading newReading = new SensorReading();
                 newReading.setGateway(gateway);
                 newReading.setSensor(sensor);
-                newReading.setValue(sensorDto.getValue());
-                newReading.setTimestamp(sensorDto.getTimestamp());
+                newReading.setValue(sensorDto.value());
+                newReading.setTimestamp(sensorDto.timestamp());
 
-                // <<< ZMIANA 4: Zapis do WŁAŚCIWEGO repozytorium (naprawa błędu Incompatible types)
                 sensorReadingRepository.save(newReading);
             }
+        } catch (NumberFormatException e) {
+            return new ResponseEntity<>("Błąd przetwarzania danych: Nieprawidłowy format ID (nie jest liczbą). " + e.getMessage(), HttpStatus.BAD_REQUEST);
         } catch (RuntimeException e) {
+            // Ten błąd (np. "Nie znaleziono bramki") jest teraz jedynym powodem błędu 400
             return new ResponseEntity<>("Błąd przetwarzania danych: " + e.getMessage(), HttpStatus.BAD_REQUEST);
         }
 

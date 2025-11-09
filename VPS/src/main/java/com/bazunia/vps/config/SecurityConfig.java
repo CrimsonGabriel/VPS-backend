@@ -49,7 +49,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/android/activate").permitAll()
                         .requestMatchers("/api/auth/request-password-reset").permitAll()
                         .requestMatchers("/api/auth/reset-password").permitAll()
-
+                        .requestMatchers("/api/sensors/battery").permitAll()
 
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/auth/**", "/2fa/**").permitAll()
