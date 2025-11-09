@@ -1,10 +1,13 @@
 // Plik: com/bazunia/vps/controller/ApiController.java
 package com.bazunia.vps.controller;
 
-import com.bazunia.vps.dto.TwoFaStatusDto;
+
 import com.bazunia.vps.model.User;
-import com.bazunia.vps.service.DataService;
-import com.bazunia.vps.dto.DataRequest;
+import com.bazunia.vps.model.SensorReading;
+import com.bazunia.vps.model.Gateway;
+import com.bazunia.vps.model.Sensor;
+
+import com.bazunia.vps.dto.TwoFaStatusDto;
 import com.bazunia.vps.dto.RegistrationRequest;
 import com.bazunia.vps.dto.StatusResponse;
 import com.bazunia.vps.dto.UpdateRequest;
@@ -13,28 +16,34 @@ import com.bazunia.vps.dto.ChangePasswordRequest;
 import com.bazunia.vps.dto.UserDetailsResponse;
 import com.bazunia.vps.dto.BatteryUpdateRequest;
 import com.bazunia.vps.dto.SimpleDataRequest;
-import com.bazunia.vps.dto.SimpleSensorReadingDto;
-import com.bazunia.vps.model.SensorReading;
+import com.bazunia.vps.dto.GatewayUpdateRequest;
+import com.bazunia.vps.dto.SensorReadingResponseDto;
+import com.bazunia.vps.dto.GatewayDto;
+
 import com.bazunia.vps.repository.SensorReadingRepository;
 import com.bazunia.vps.repository.UserRepository;
-import com.bazunia.vps.service.StatusService;
-import com.bazunia.vps.service.UpdateService;
-import com.bazunia.vps.service.AuthService;
-import org.springframework.transaction.annotation.Transactional;
-import com.bazunia.vps.model.Gateway;
-import com.bazunia.vps.model.Sensor;
 import com.bazunia.vps.repository.GatewayRepository;
 import com.bazunia.vps.repository.SensorRepository;
 
+import com.bazunia.vps.service.DataService;
+import com.bazunia.vps.service.StatusService;
+import com.bazunia.vps.service.UpdateService;
+import com.bazunia.vps.service.AuthService;
+import com.bazunia.vps.service.JwtService;
+
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.core.context.SecurityContextHolder;
-
-
-import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import com.bazunia.vps.service.JwtService;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.persistence.EntityNotFoundException;
 
 import java.util.List;
 import java.util.Map;
@@ -268,10 +277,15 @@ public class ApiController {
 
     // Endpoint do pobierania danych przez autoryzowanego użytkownika (Android)
     @GetMapping("/data/android")
-    public ResponseEntity<Map<String, List<SensorReading>>> getSensorData() {
-        // <<< ZMIANA 5: Użycie WŁAŚCIWEGO repozytorium
-        List<SensorReading> readings = sensorReadingRepository.findTop10ByOrderByTimestampDesc();
-        Map<String, List<SensorReading>> response = Map.of("sensors", readings);
+    public ResponseEntity<Map<String, List<SensorReadingResponseDto>>> getSensorData() {
+
+        // <<< POPRAWKA: Tworzymy obiekt Pageable, aby pobrać "Top 10" >>>
+        Pageable topTen = PageRequest.of(0, 10); // Strona 0, rozmiar 10
+
+        // <<< POPRAWKA: Wywołujemy nową, poprawną metodę z repozytorium >>>
+        List<SensorReadingResponseDto> readings = sensorReadingRepository.findLatestReadingsWithDetails(topTen);
+
+        Map<String, List<SensorReadingResponseDto>> response = Map.of("sensors", readings);
         return ResponseEntity.ok(response);
     }
 
@@ -412,5 +426,51 @@ public class ApiController {
         }
         // Rzucamy wyjątek, jeśli nagłówek jest nieprawidłowy
         throw new IllegalArgumentException("Brak lub nieprawidłowy nagłówek Authorization.");
+    }
+    private User getAuthenticatedUser(Authentication authentication) {
+        // Spring Security Principal jest już pełnym obiektem User pobranym przez AuthService
+        return (User) authentication.getPrincipal();
+    }
+
+    // === NOWE ENDPOINTY DO ZARZĄDZANIA BRAMKAMI (WYMAGANIA 2.x) ===
+
+    @GetMapping("/api/gateways")
+    public ResponseEntity<List<GatewayDto>> getGateways(Authentication authentication) {
+        User user = (User) authentication.getPrincipal();
+        List<GatewayDto> gateways = dataService.getGatewaysForUser(user);
+        return ResponseEntity.ok(gateways);
+    }
+
+    @PutMapping("/api/gateways/{id}")
+    public ResponseEntity<GatewayDto> updateGateway(
+            @PathVariable Long id,
+            @RequestBody GatewayUpdateRequest request,
+            Authentication authentication) {
+
+        User user = (User) authentication.getPrincipal();
+        try {
+            GatewayDto updatedGateway = dataService.updateGateway(id, request, user);
+            return ResponseEntity.ok(updatedGateway);
+        } catch (EntityNotFoundException e) {
+            return ResponseEntity.notFound().build();
+        } catch (AccessDeniedException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+    }
+
+    @DeleteMapping("/api/gateways/{id}")
+    public ResponseEntity<Void> deleteGateway(
+            @PathVariable Long id,
+            Authentication authentication) {
+
+        User user = getAuthenticatedUser(authentication);
+        try {
+            dataService.deleteGateway(id, user);
+            return ResponseEntity.noContent().build(); // Sukces, 204 No Content
+        } catch (EntityNotFoundException e) {
+            return ResponseEntity.notFound().build();
+        } catch (AccessDeniedException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
     }
 }

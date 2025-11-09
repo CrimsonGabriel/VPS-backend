@@ -13,7 +13,6 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-// ⭐️ POPRAWKA 1: Dodanie importów dla konfiguracji CORS
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -34,37 +33,63 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Konfiguracja CORS bez zmian
 
                 .authorizeHttpRequests(authz -> authz
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                        .requestMatchers("/debug-key").permitAll()
-                        // Endpointy publiczne (RPi, Logowanie, Status)
-                        .requestMatchers("/register/rasp", "/register/android", "/update", "/data").permitAll()
+                        // --- 1. ENDPOINTY PUBLICZNE ---
+                        // (Logowanie, Rejestracja, Reset Hasła, RPi, Status)
+                        .requestMatchers(
+                                "/",
+                                "/status/json",
+                                "/debug-key",
+                                // RPi (chronione hasłem w kontrolerze)
+                                "/register/rasp",
+                                "/register/android",
+                                "/update",
+                                "/data",
+                                "/api/sensors/battery",
+                                // Logowanie i Rejestracja
+                                "/api/auth/google",
+                                "/api/auth/login",
+                                "/api/auth/android/register",
+                                "/api/auth/android/activate",
+                                // Weryfikacja 2FA (tylko przy logowaniu)
+                                "/api/auth/2fa/login-verify",
+                                "/api/auth/2fa/email-verify",
+                                // Reset hasła
+                                "/api/auth/request-password-reset",
+                                "/api/auth/reset-password"
+                        ).permitAll()
 
+                        // --- 2. ENDPOINTY CHRONIONE (Wymagają JWT) ---
+                        .requestMatchers(
+                                // <<< POPRAWKA: JAWNIE ZEZWÓL NA TE ŚCIEŻKI >>>
+                                "/data/android",        // Pobieranie odczytów przez appkę
+                                "/api/gateways",        // Pobieranie listy bramek
+                                "/api/gateways/**",     // Edycja i usuwanie bramek
 
-                        // /api/auth/login jest już pokryte przez /api/auth/**
-                        .requestMatchers("/api/auth/android/register").permitAll()
-                        .requestMatchers("/api/auth/android/activate").permitAll()
-                        .requestMatchers("/api/auth/request-password-reset").permitAll()
-                        .requestMatchers("/api/auth/reset-password").permitAll()
-                        .requestMatchers("/api/sensors/battery").permitAll()
+                                // Zarządzanie kontem (w tym 2FA)
+                                "/api/user/me",
+                                "/api/user/set-password",
+                                "/api/user/change-password",
+                                "/api/auth/2fa/status",
+                                "/api/auth/2fa/setup",
+                                "/api/auth/2fa/verify",
+                                "/api/auth/2fa/disable",
+                                // Inne chronione
+                                "/api/update/**",
+                                "/api/files/**"
+                        ).authenticated()
 
-                        .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers("/auth/**", "/2fa/**").permitAll()
-                        .requestMatchers("/status/json", "/").permitAll()
-                        .requestMatchers("/update").permitAll()
+                        // --- 3. ENDPOINTY ADMINA (Wymagają Roli ADMIN) ---
+                        .requestMatchers(
+                                "/api/admin/**",
+                                "/api/data/history/delete"
+                        ).hasRole("ADMIN")
 
-                        // --- CHRONIONE ENDPOINTY (BEZ ZMIAN) ---
-                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/user/set-password").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/user/change-password").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/api/user/me").authenticated()
-                        .requestMatchers(HttpMethod.DELETE, "/api/files/**").hasRole("ADMIN")
-                        .requestMatchers("/api/files/**").authenticated()
-                        .requestMatchers(HttpMethod.DELETE, "/api/data/history/delete").hasRole("ADMIN")
-                        .requestMatchers("/api/update/**").authenticated()
+                        // Cała reszta (jeśli coś pominięto) też wymaga logowania
                         .anyRequest().authenticated()
                 )
 
@@ -81,21 +106,14 @@ public class SecurityConfig {
         return http.build();
     }
 
-    // ⭐️ POPRAWKA 4: Dodanie Beana konfigurującego CORS
-    // To mówi serwerowi, aby ufał żądaniom z Twojego frontendu
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
+        // ... (Ta metoda jest OK, bez zmian) ...
         CorsConfiguration configuration = new CorsConfiguration();
-        // Zezwalamy na żądania z dowolnego miejsca (dla prostoty)
-        // W produkcji można tu wpisać np. "https://testserwera.pl"
         configuration.setAllowedOrigins(Arrays.asList("*"));
-        // Zezwalamy na wszystkie kluczowe metody
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        // Zezwalamy na wszystkie nagłówki (kluczowe dla 'Authorization')
         configuration.setAllowedHeaders(Arrays.asList("*"));
-
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        // Stosujemy tę konfigurację do wszystkich ścieżek
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
