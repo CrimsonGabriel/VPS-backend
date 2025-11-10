@@ -488,7 +488,9 @@ public class ApiController {
 
         User user = getAuthenticatedUser(authentication);
         try {
-            dataService.deleteGateway(id, user);
+            // <<< ZMIANA WYWOŁANIA: z deleteGateway na disassociateGateway >>>
+            dataService.disassociateGateway(id, user);
+
             return ResponseEntity.noContent().build(); // Sukces, 204 No Content
         } catch (EntityNotFoundException e) {
             return ResponseEntity.notFound().build();

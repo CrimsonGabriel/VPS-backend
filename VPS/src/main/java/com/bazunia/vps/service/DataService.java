@@ -90,14 +90,17 @@ public class DataService {
     }
 
     @Transactional
-    public void deleteGateway(Long gatewayId, User user) {
+    public void disassociateGateway(Long gatewayId, User user) {
         Gateway gateway = gatewayRepository.findById(gatewayId)
                 .orElseThrow(() -> new EntityNotFoundException("Bramka o ID " + gatewayId + " nie znaleziona."));
 
+        // Weryfikacja właściciela
         if (!Objects.equals(gateway.getOwner().getId(), user.getId())) {
-            throw new AccessDeniedException("Brak uprawnień do usunięcia tej bramki.");
+            throw new AccessDeniedException("Brak uprawnień do modyfikacji tej bramki.");
         }
 
-        gatewayRepository.delete(gateway);
+        // <<< GŁÓWNA ZMIANA: Ustawiamy właściciela na null zamiast usuwać >>>
+        gateway.setOwner(null);
+        gatewayRepository.save(gateway);
     }
 }
