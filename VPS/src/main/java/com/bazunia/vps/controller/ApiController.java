@@ -19,6 +19,8 @@ import com.bazunia.vps.dto.SimpleDataRequest;
 import com.bazunia.vps.dto.GatewayUpdateRequest;
 import com.bazunia.vps.dto.SensorReadingResponseDto;
 import com.bazunia.vps.dto.GatewayDto;
+import com.bazunia.vps.dto.SensorDto;
+import com.bazunia.vps.dto.SensorUpdateRequest;
 
 import com.bazunia.vps.repository.SensorReadingRepository;
 import com.bazunia.vps.repository.UserRepository;
@@ -442,15 +444,36 @@ public class ApiController {
     }
 
     @PutMapping("/api/gateways/{id}")
-    public ResponseEntity<GatewayDto> updateGateway(
+    public ResponseEntity<Gateway> updateGateway( // <<< POPRAWKA TYPU
+                                                  @PathVariable Long id,
+                                                  @RequestBody GatewayUpdateRequest request,
+                                                  Authentication authentication) {
+
+        User user = (User) authentication.getPrincipal();
+        try {
+            // <<< POPRAWKA TYPU: Wywołujemy metodę zwracającą Encję >>>
+            Gateway updatedGateway = dataService.updateGateway(id, request, user);
+            return ResponseEntity.ok(updatedGateway);
+        } catch (EntityNotFoundException e) {
+            return ResponseEntity.notFound().build();
+        } catch (AccessDeniedException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+    }
+
+    /**
+     * <<< NOWY ENDPOINT: Dodajemy brakującą metodę do aktualizacji czujnika >>>
+     */
+    @PutMapping("/api/sensors/{id}")
+    public ResponseEntity<Sensor> updateSensor(
             @PathVariable Long id,
-            @RequestBody GatewayUpdateRequest request,
+            @RequestBody SensorUpdateRequest request,
             Authentication authentication) {
 
         User user = (User) authentication.getPrincipal();
         try {
-            GatewayDto updatedGateway = dataService.updateGateway(id, request, user);
-            return ResponseEntity.ok(updatedGateway);
+            Sensor updatedSensor = dataService.updateSensor(id, request, user);
+            return ResponseEntity.ok(updatedSensor);
         } catch (EntityNotFoundException e) {
             return ResponseEntity.notFound().build();
         } catch (AccessDeniedException e) {
@@ -473,4 +496,5 @@ public class ApiController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
     }
+
 }

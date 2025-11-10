@@ -5,6 +5,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import com.bazunia.vps.dto.SensorReadingResponseDto;
 import org.springframework.data.jpa.repository.Query;
 import java.util.List;
+import com.bazunia.vps.model.User; // <<< DODAJ TEN IMPORT
+import org.springframework.data.repository.query.Param;
 
 // <<< DODAJ TE IMPORTY >>>
 import org.springframework.data.domain.Pageable;
