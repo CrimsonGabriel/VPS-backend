@@ -80,7 +80,8 @@ public class SecurityConfig {
                                 "/api/auth/2fa/disable",
                                 // Inne chronione
                                 "/api/update/**",
-                                "/api/files/**"
+                                "/api/files/**",
+                                "/api/folders/**"
                         ).authenticated()
 
                         // --- 3. ENDPOINTY ADMINA (Wymagają Roli ADMIN) ---
