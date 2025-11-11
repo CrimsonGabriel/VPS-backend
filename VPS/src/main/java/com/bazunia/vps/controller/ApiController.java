@@ -530,6 +530,28 @@ public class ApiController {
         }
     }
 
+    /**
+     * ⭐️ NOWY ENDPOINT: Włącza/wyłącza wysyłanie odczytów przez czujnik.
+     * Używany przez Androida (np. Switch w SensorDetailActivity).
+     */
+    @PostMapping("/api/sensors/{id}/toggle-reporting")
+    public ResponseEntity<Sensor> toggleSensorReporting(
+            @PathVariable Long id,
+            Authentication authentication) {
+
+        User user = (User) authentication.getPrincipal();
+        try {
+            // Wywołujemy nową metodę z serwisu
+            Sensor updatedSensor = dataService.toggleSensorReporting(id, user);
+            // Zwracamy zaktualizowany obiekt sensora (może się przydać w appce)
+            return ResponseEntity.ok(updatedSensor);
+        } catch (EntityNotFoundException e) {
+            return ResponseEntity.notFound().build();
+        } catch (AccessDeniedException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+    }
+
     @DeleteMapping("/api/gateways/{id}")
     public ResponseEntity<Void> deleteGateway(
             @PathVariable Long id,

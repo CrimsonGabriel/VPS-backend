@@ -130,4 +130,21 @@ public class DataService {
         }
         return sensorRepository.setGlobalInterval(interval);
     }
+    /**
+     * ⭐️ NOWA METODA: Przełącza stan raportowania dla czujnika.
+     */
+    @Transactional
+    public Sensor toggleSensorReporting(Long sensorId, User user) {
+        Sensor sensor = sensorRepository.findById(sensorId)
+                .orElseThrow(() -> new EntityNotFoundException("Czujnik o ID " + sensorId + " nie znaleziony."));
+
+        // Weryfikacja właściciela
+        if (!Objects.equals(sensor.getGateway().getOwner().getId(), user.getId())) {
+            throw new AccessDeniedException("Brak uprawnień do edycji tego czujnika.");
+        }
+
+        // Przełącz stan
+        sensor.setReportingEnabled(!sensor.isReportingEnabled());
+        return sensorRepository.save(sensor);
+    }
 }
