@@ -50,6 +50,7 @@ public class SecurityConfig {
                                 "/update",
                                 "/data",
                                 "/api/sensors/battery",
+                                "/api/sensors/config",
                                 // Logowanie i Rejestracja
                                 "/api/auth/google",
                                 "/api/auth/login",
@@ -69,7 +70,7 @@ public class SecurityConfig {
                                 "/data/android",        // Pobieranie odczytów przez appkę
                                 "/api/gateways",        // Pobieranie listy bramek
                                 "/api/gateways/**",     // Edycja i usuwanie bramek
-
+                                "/api/sensors/**",
                                 // Zarządzanie kontem (w tym 2FA)
                                 "/api/user/me",
                                 "/api/user/set-password",

@@ -21,6 +21,8 @@ import com.bazunia.vps.dto.SensorReadingResponseDto;
 import com.bazunia.vps.dto.GatewayDto;
 import com.bazunia.vps.dto.SensorDto;
 import com.bazunia.vps.dto.SensorUpdateRequest;
+import com.bazunia.vps.dto.SensorConfigDto;
+import com.bazunia.vps.dto.PasswordRequest; // ⭐️ POPRAWIONY IMPORT
 
 import com.bazunia.vps.repository.SensorReadingRepository;
 import com.bazunia.vps.repository.UserRepository;
@@ -57,13 +59,12 @@ public class ApiController {
     private static final String SECRET_PASSWORD = "ZMIEN_TO_HASLO_XD";
 
     private final StatusService statusService;
-    // <<< ZMIANA 1: Zmiana nazwy zmiennej, aby uniknąć konfliktu
     private final SensorReadingRepository sensorReadingRepository;
     private final UserRepository userRepository;
     private final DataService dataService;
 
     private final GatewayRepository gatewayRepository;
-    private final SensorRepository sensorRepository; // Ta nazwa jest OK
+    private final SensorRepository sensorRepository;
 
 
     private final UpdateService updateService;
@@ -72,7 +73,6 @@ public class ApiController {
 
     @Autowired
     public ApiController(StatusService statusService,
-                         // <<< ZMIANA 2: Zmiana nazwy parametru w konstruktorze
                          SensorReadingRepository sensorReadingRepository,
                          UserRepository userRepository,
                          DataService dataService,
@@ -81,7 +81,6 @@ public class ApiController {
                          GatewayRepository gatewayRepository,
                          SensorRepository sensorRepository) {
         this.statusService = statusService;
-        // <<< ZMIANA 3: Poprawne przypisanie
         this.sensorReadingRepository = sensorReadingRepository;
         this.userRepository = userRepository;
         this.dataService = dataService;
@@ -179,6 +178,56 @@ public class ApiController {
         return ResponseEntity.ok(message);
     }
 
+    /**
+     * Zwraca konfigurację (ID, typ, interwał) dla wszystkich czujników.
+     * RPi używa tego do dynamicznego ustawiania pętli odpytywania.
+     * Chronione tym samym hasłem co /data.
+     */
+    @PostMapping("/api/sensors/config")
+    public ResponseEntity<?> getSensorConfig(
+            @RequestBody PasswordRequest request) {
+
+        // 1. Sprawdź hasło
+        if (!SECRET_PASSWORD.equals(request.password())) {
+            return new ResponseEntity<>("Nieprawidłowe hasło", HttpStatus.UNAUTHORIZED);
+        }
+
+        try {
+            // 2. Pobierz konfigurację z serwisu
+            List<SensorConfigDto> configList = dataService.getAllSensorConfigs();
+            // Zwracamy listę jako główny obiekt JSON
+            return ResponseEntity.ok(configList);
+
+        } catch (Exception e) {
+            return new ResponseEntity<>("Błąd serwera podczas pobierania konfiguracji: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    // ⭐️ ⭐️ ⭐️ NOWY ENDPOINT (PRZENIESIONY Z ADMINA) ⭐️ ⭐️ ⭐️
+    /**
+     * Ustawia globalny interwał odpytywania dla WSZYSTKICH czujników.
+     * Dostępne dla każdego zalogowanego użytkownika.
+     */
+    @PostMapping("/api/sensors/interval/global")
+    public ResponseEntity<?> setGlobalSensorInterval(@RequestBody Map<String, Integer> request) {
+        Integer interval = request.get("interval");
+        if (interval == null) {
+            return new ResponseEntity<>("Brak parametru 'interval'", HttpStatus.BAD_REQUEST);
+        }
+
+        try {
+            // Używamy dataService, które jest już dostępne w tej klasie
+            int updatedCount = dataService.setGlobalSensorInterval(interval);
+            return ResponseEntity.ok(Map.of(
+                    "message", "Zaktualizowano interwał dla " + updatedCount + " czujników.",
+                    "updatedCount", updatedCount,
+                    "newInterval", interval
+            ));
+        } catch (Exception e) {
+            return new ResponseEntity<>("Błąd serwera: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
     // --- ENDPOINTY DLA AKTUALIZACJI ANDROIDA ---
 
     // 1. ENDPOINT: POBIERANIE STATUSU AKTUALIZACJI (Rozwiązuje 403 na GET /api/update/status)
@@ -213,7 +262,7 @@ public class ApiController {
     }
 
 
-// --- ENDPOINT DLA RASPBERRY PI: DANE (/data) ---
+    // --- ENDPOINT DLA RASPBERRY PI: DANE (/data) ---
 // <<< ZMIANA: Cała metoda przepisana, aby używać SimpleDataRequest
     @PostMapping("/data")
     public ResponseEntity<String> postData(@RequestBody SimpleDataRequest data, HttpServletRequest request) {

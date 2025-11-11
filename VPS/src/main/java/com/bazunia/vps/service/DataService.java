@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.bazunia.vps.dto.SensorDto;
 import com.bazunia.vps.dto.SensorUpdateRequest;
+import com.bazunia.vps.dto.SensorConfigDto;
 import com.bazunia.vps.model.Sensor; // <<< Typ Encji
 import com.bazunia.vps.repository.SensorRepository;
 import java.util.List;
@@ -69,8 +70,7 @@ public class DataService {
     }
 
     /**
-     * NOWA METODA: Aktualizuje czujnik (nazwa, opis).
-     * <<< POPRAWKA: Zwraca Encję 'Sensor', a nie 'SensorDto' >>>
+     * NOWA METODA: Aktualizuje czujnik (nazwa, opis, interwał).
      */
     @Transactional
     public Sensor updateSensor(Long sensorId, SensorUpdateRequest request, User user) {
@@ -81,11 +81,18 @@ public class DataService {
             throw new AccessDeniedException("Brak uprawnień do edycji tego czujnika.");
         }
 
-        // <<< POPRAWKA: Zakładamy, że SensorUpdateRequest to 'record' (ma metody .name() i .description()) >>>
-        sensor.setName(request.name());
-        sensor.setDescription(request.description());
 
-        // <<< POPRAWKA: Zwracamy bezpośrednio zapisaną Encję >>>
+        if (request.name() != null && !request.name().isEmpty()) {
+            sensor.setName(request.name());
+        }
+        if (request.description() != null) {
+            sensor.setDescription(request.description());
+        }
+
+        if (request.intervalSeconds() != null) {
+            sensor.setIntervalSeconds(request.intervalSeconds());
+        }
+
         return sensorRepository.save(sensor);
     }
 
@@ -102,5 +109,25 @@ public class DataService {
         // <<< GŁÓWNA ZMIANA: Ustawiamy właściciela na null zamiast usuwać >>>
         gateway.setOwner(null);
         gatewayRepository.save(gateway);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SensorConfigDto> getAllSensorConfigs() {
+
+        return sensorRepository.findAll().stream()
+                .map(SensorConfigDto::fromEntity)
+                .collect(Collectors.toList());
+    }
+    /**
+     * Ustawia globalny interwał dla wszystkich czujników w bazie danych.
+     */
+    @Transactional
+    public int setGlobalSensorInterval(Integer interval) {
+        if (interval == null || interval <= 0) {
+            // Możemy ustawić null, aby RPi użyło domyślnego, lub ustawić sztywny limit
+            // Ustawmy 60 jako bezpieczny fallback, jeśli ktoś poda 0.
+            interval = 60;
+        }
+        return sensorRepository.setGlobalInterval(interval);
     }
 }
