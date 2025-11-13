@@ -12,43 +12,43 @@ import java.util.Set;
 public class StatusService {
 
     private String registeredRPiIp = "Brak IP RPi";
-    private String registeredAndroidIp = "Brak IP Androida"; // Dla starego endpointu RPi
     private String lastReportText = "Brak ostatniego meldunku czasu";
 
-    // NOWY ZBIÓR (SET) - Zamiast uniqueAndroidIPs z server.js
-    // Jest "synchronized" aby był bezpieczny przy wielu żądaniach na raz
+    // Zbiór IP KLIENTÓW MOBILNYCH (Android/Przeglądarka)
     private final Set<String> uniqueAndroidIPs = Collections.synchronizedSet(new HashSet<>());
 
-    // --- Metody do aktualizacji stanu (bezpieczne wątkowo) ---
+    // ⭐️ NOWE POLE: Zbiór unikalnych IP RPi (bramki) ⭐️
+    private final Set<String> uniqueRpiIPs = Collections.synchronizedSet(new HashSet<>());
+
+    // --- Metody do aktualizacji stanu ---
 
     public synchronized void updateRpiIp(String ip) {
         this.registeredRPiIp = ip;
-    }
-
-    public synchronized void updateAndroidIp(String ip) {
-        this.registeredAndroidIp = ip;
     }
 
     public synchronized void updateLastReport(String report) {
         this.lastReportText = report;
     }
 
-    // --- NOWA METODA, KTÓREJ BRAKOWAŁO W AuthService ---
-
-    /**
-     * Dodaje IP klienta Android (z logowania Google) do zbioru unikalnych IP.
-     * @param ip Adres IP klienta.
-     */
+    /** Dodaje IP klienta mobilnego (Android). */
     public void addAndroidIp(String ip) {
         if (ip != null && !ip.isEmpty()) {
             uniqueAndroidIPs.add(ip);
-            System.out.println("[StatusService] Dodano IP Androida: " + ip + ". Łącznie: " + uniqueAndroidIPs.size());
         }
     }
 
-    // Metoda do pobierania listy IP (dla /status/json)
+    /** ⭐️ NOWA METODA: Dodaje IP klienta RPi (Bramki). ⭐️ */
+    public void addRpiIp(String ip) {
+        if (ip != null && !ip.isEmpty()) {
+            uniqueRpiIPs.add(ip);
+        }
+    }
+
     public Set<String> getUniqueAndroidIPs() {
-        // Zwracamy kopię, aby nikt z zewnątrz nie modyfikował naszej listy
         return new HashSet<>(uniqueAndroidIPs);
+    }
+
+    public Set<String> getUniqueRpiIPs() {
+        return new HashSet<>(uniqueRpiIPs); // Zbiór RPi, może być użyty w przyszłości
     }
 }

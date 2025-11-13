@@ -57,4 +57,14 @@ public class FileController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + originalFileName + "\"")
                 .body(resource);
     }
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteFile(@PathVariable Long id) {
+        try {
+            fileStorageService.deleteFile(id);
+            return ResponseEntity.noContent().build(); // 204 No Content - Sukces
+        } catch (RuntimeException e) {
+            // Można rozszerzyć o lepszą obsługę błędów (np. 404)
+            return ResponseEntity.status(404).build();
+        }
+    }
 }

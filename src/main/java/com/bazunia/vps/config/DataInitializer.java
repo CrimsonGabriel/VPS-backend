@@ -35,17 +35,34 @@ public class DataInitializer implements CommandLineRunner {
             adminUser.setName("Domyślny Administrator");
             adminUser.setRole(Role.ADMIN);
 
+            // ⭐️⭐️ NOWA LINIA ⭐️⭐️
+            adminUser.setEnabled(true); // Ustawia admina jako aktywnego od razu
+
             userRepository.save(adminUser);
             logger.info(">>> Użytkownik admin został stworzony pomyślnie!");
         } else {
-            // Bezpieczna logika: naprawa roli istniejącego usera
             User existingAdmin = adminOptional.get();
+            boolean needsUpdate = false;
+
+            // Naprawa roli
             if (existingAdmin.getRole() == null || existingAdmin.getRole() != Role.ADMIN) {
                 existingAdmin.setRole(Role.ADMIN);
+                needsUpdate = true;
+                logger.info(">>> Użytkownik admin istniał, Rola została naprawiona na ADMIN.");
+            }
+
+            // ⭐️⭐️ NOWA LOGIKA NAPRAWY ⭐️⭐️
+            // Naprawa istniejących adminów, którzy mogliby być 'disabled' (chociaż DEFAULT true ich uratował)
+            if (!existingAdmin.isEnabled()) {
+                existingAdmin.setEnabled(true);
+                needsUpdate = true;
+                logger.info(">>> Użytkownik admin istniał, ale nie był aktywny. Ustawiono 'enabled = true'.");
+            }
+
+            if (needsUpdate) {
                 userRepository.save(existingAdmin);
-                logger.info(">>> Użytkownik admin istniał, ale Rola została ustawiona/naprawiona na ADMIN.");
             } else {
-                logger.info(">>> Użytkownik admin już istnieje i ma poprawną Rolę. Pomijam zmiany.");
+                logger.info(">>> Użytkownik admin już istnieje i ma poprawną Rolę/Status. Pomijam zmiany.");
             }
         }
     }

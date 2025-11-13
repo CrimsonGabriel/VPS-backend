@@ -15,6 +15,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import jakarta.servlet.MultipartConfigElement;
 import org.springframework.boot.web.servlet.MultipartConfigFactory;
 import org.springframework.util.unit.DataSize;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.web.filter.ForwardedHeaderFilter;
 // --- ⭐️ DODAJ IMPORTY DLA 2FA ⭐️ ---
 import dev.samstevens.totp.code.CodeVerifier;
 import dev.samstevens.totp.code.DefaultCodeGenerator;
@@ -56,6 +58,16 @@ public class ApplicationConfig {
         authProvider.setUserDetailsService(userDetailsService());
         authProvider.setPasswordEncoder(passwordEncoder()); // Używa BCryptPasswordEncoder
         return authProvider;
+    }
+
+    // --- ⭐️ DODANY BEAN DLA OBSŁUGI NAGŁÓWKÓW PROXY (ROZWIĄZANIE PROBLEMU Z 127.0.0.1) ⭐️ ---
+    @Bean
+    public FilterRegistrationBean<ForwardedHeaderFilter> forwardedHeaderFilter() {
+        // Ten filter nakazuje Springowi, aby odczytywał adres IP klienta
+        // z nagłówków X-Forwarded-For i X-Real-IP, zamiast z adresu proxy (127.0.0.1).
+        FilterRegistrationBean<ForwardedHeaderFilter> bean = new FilterRegistrationBean<>();
+        bean.setFilter(new ForwardedHeaderFilter());
+        return bean;
     }
 
     // --- ⭐️ DODANE BEANY DLA 2FA, KTÓRYCH BRAKOWAŁO ⭐️ ---

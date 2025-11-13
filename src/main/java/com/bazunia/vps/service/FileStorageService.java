@@ -97,4 +97,25 @@ public class FileStorageService {
     public List<FileRecord> getAllFiles() {
         return fileRecordRepository.findAll();
     }
+    public void deleteFile(Long fileId) {
+        FileRecord fileRecord = fileRecordRepository.findById(fileId)
+                .orElseThrow(() -> new RuntimeException("Plik nie znaleziony " + fileId));
+
+        try {
+            // Usuń fizyczny plik z dysku
+            Path filePath = Paths.get(fileRecord.getStoragePath());
+            Files.deleteIfExists(filePath);
+
+            // Usuń rekord z bazy
+            fileRecordRepository.delete(fileRecord);
+
+        } catch (IOException ex) {
+            // Logowanie błędu, ale kontynuujemy usuwanie z bazy, jeśli pliku nie ma
+            System.err.println("Błąd podczas próby usunięcia pliku z dysku: " + ex.getMessage());
+            fileRecordRepository.delete(fileRecord);
+
+        } catch (Exception ex) {
+            throw new RuntimeException("Nie można usunąć pliku i rekordu dla ID: " + fileId, ex);
+        }
+    }
 }
