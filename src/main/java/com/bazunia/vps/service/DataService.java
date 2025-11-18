@@ -16,10 +16,13 @@ import com.bazunia.vps.dto.SensorUpdateRequest;
 import com.bazunia.vps.dto.SensorConfigDto;
 import com.bazunia.vps.model.Sensor; // <<< Typ Encji
 import com.bazunia.vps.repository.SensorRepository;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
-
+import com.bazunia.vps.dto.SensorStatusErrorDto;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 @Service
 public class DataService {
 
@@ -146,5 +149,72 @@ public class DataService {
         // Przełącz stan
         sensor.setReportingEnabled(!sensor.isReportingEnabled());
         return sensorRepository.save(sensor);
+    }
+    /**
+     * ⭐️ NOWA METODA: Sprawdza statusy bramek dla użytkownika.
+     * Wywoływana przez ApiController, aby znaleźć urządzenia offline.
+     */
+    @Transactional(readOnly = true)
+    public List<SensorStatusErrorDto> checkSensorStatuses(User user) {
+
+        // 1. Zdefiniuj próg "offline".
+        // Jeśli bramka nie wysłała danych (przez endpoint /data) w ciągu 5 minut,
+        // oznaczamy ją jako offline.
+        final LocalDateTime cutoff = LocalDateTime.now().minusMinutes(5);
+
+        // 2. Przygotuj listę błędów
+        List<SensorStatusErrorDto> errors = new ArrayList<>();
+
+        // 3. Pobierz wszystkie bramki i czujniki użytkownika
+        // Używamy metody, którą już masz w repozytorium (obsługuje getGatewaysForUser)
+        List<Gateway> gateways = gatewayRepository.findWithSensorsByOwner(user);
+
+        // 4. Iteruj i sprawdzaj
+        for (Gateway gateway : gateways) {
+
+            LocalDateTime lastSeen = gateway.getLastSeen();
+
+            // 5. Sprawdź warunek błędu (Brak 'lastSeen' LUB jest starsze niż 'cutoff')
+            if (lastSeen == null || lastSeen.isBefore(cutoff)) {
+
+                // 6. Stwórz czytelny komunikat
+                String lastSeenText;
+                if (lastSeen == null) {
+                    lastSeenText = "nigdy";
+                } else {
+                    // Oblicz, ile minut temu to było, dla lepszego komunikatu
+                    long minutesAgo = ChronoUnit.MINUTES.between(lastSeen, LocalDateTime.now());
+                    if (minutesAgo == 0) {
+                        lastSeenText = "ponad 5 min. temu";
+                    } else {
+                        lastSeenText = "ponad " + minutesAgo + " min. temu";
+                    }
+                }
+
+                String message = "Bramka '" + gateway.getName() + "' jest offline. Ostatni kontakt: " + lastSeenText + ".";
+
+                // 7. Dodaj błąd do listy (pasujący do DTO)
+                errors.add(new SensorStatusErrorDto(
+                        gateway.getId(),            // entityId
+                        "GATEWAY",                  // entityType
+                        gateway.getName(),          // entityName
+                        "OFFLINE",                  // errorType
+                        message                     // readableMessage
+                ));
+
+                // Uwaga: Jeśli bramka jest offline, celowo nie sprawdzamy
+                // jej czujników - błąd bramki jest nadrzędny.
+            }
+
+            // Przyszła rozbudowa:
+            // else {
+            //   // Bramka jest ONLINE.
+            //   // Tutaj mógłbyś dodać logikę sprawdzania timestampów
+            //   // OSTATNIEGO ODCZYTU dla każdego z jej czujników,
+            //   // aby wykryć błędy pojedynczych czujników.
+            // }
+        }
+
+        return errors;
     }
 }

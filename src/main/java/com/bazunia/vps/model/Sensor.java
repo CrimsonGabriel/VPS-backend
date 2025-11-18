@@ -22,7 +22,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 public class Sensor {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+
     private Long id;
 
     @JsonIgnore
@@ -50,7 +50,7 @@ public class Sensor {
     private boolean reportingEnabled = true;
     @Column(length = 50)
     private String keyword;
-    @CreationTimestamp
+
     private LocalDateTime createdAt;
 
     @JsonIgnore

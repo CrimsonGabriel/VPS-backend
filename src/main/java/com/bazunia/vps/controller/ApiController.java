@@ -22,7 +22,8 @@ import com.bazunia.vps.dto.GatewayDto;
 import com.bazunia.vps.dto.SensorDto;
 import com.bazunia.vps.dto.SensorUpdateRequest;
 import com.bazunia.vps.dto.SensorConfigDto;
-import com.bazunia.vps.dto.PasswordRequest; // ⭐️ POPRAWIONY IMPORT
+import com.bazunia.vps.dto.PasswordRequest;
+import com.bazunia.vps.dto.SensorStatusErrorDto;
 
 import com.bazunia.vps.repository.SensorReadingRepository;
 import com.bazunia.vps.repository.UserRepository;
@@ -89,6 +90,13 @@ public class ApiController {
         this.authService = authService;
         this.gatewayRepository = gatewayRepository;
         this.sensorRepository = sensorRepository;
+    }
+
+    @GetMapping("/api/sensors/status")
+    public ResponseEntity<List<SensorStatusErrorDto>> getSensorStatuses(Authentication authentication) {
+        User user = (User) authentication.getPrincipal();
+        List<SensorStatusErrorDto> errors = dataService.checkSensorStatuses(user);
+        return ResponseEntity.ok(errors);
     }
 
     // ⭐️⭐️⭐️ NOWY ENDPOINT DEBUGUJĄCY ⭐️⭐️⭐️

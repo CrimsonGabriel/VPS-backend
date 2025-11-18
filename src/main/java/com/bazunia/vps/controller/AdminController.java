@@ -14,9 +14,17 @@ import com.bazunia.vps.dto.PasswordRequest;
 import com.bazunia.vps.service.DataService;
 import org.springframework.web.bind.annotation.PostMapping;
 import java.util.List;
-import java.util.Map; // <-- NOWY IMPORT
+import java.util.Map;
 import java.util.Optional;
-
+import com.bazunia.vps.dto.SensorUpdateRequest;
+import com.bazunia.vps.model.Sensor;
+import com.bazunia.vps.model.Gateway;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import java.time.LocalDateTime;
+import com.bazunia.vps.service.SensorService;
+import com.bazunia.vps.dto.SensorCreateRequest;
 @RestController
 // Zmieniamy ścieżkę bazową na /api/admin, aby kontroler obsługiwał też inne sekcje admina
 @RequestMapping("/api/admin")
@@ -28,6 +36,8 @@ public class AdminController {
     private final UpdateService updateService;
     private final DataService dataService;
 
+
+    private final SensorService sensorService;
     // DTOs dla uproszczenia (możesz je przenieść do pakietu dto)
     public record AdminUserRequest(
             String email,
@@ -42,6 +52,7 @@ public class AdminController {
             String status,  // "REQUIRED", "OPTIONAL", "NONE"
             boolean shouldNotify // Czy Android ma wyświetlić powiadomienie
     ) {}
+
 
     // ----------------------------------------------------------------------
     // --- 1. ZARZĄDZANIE UŻYTKOWNIKAMI (/api/admin/users/...) ---
@@ -161,4 +172,48 @@ public class AdminController {
         return ResponseEntity.ok(Map.of("message", String.format("Status dla %s ustawiony na %s.", request.key(), request.status())));
     }
 
+// ----------------------------------------------------------------------
+    // --- 3. ZARZĄDZANIE SENSORAMI (/api/admin/sensors/...) ---
+    // ----------------------------------------------------------------------
+
+    /**
+     * Tworzy nowy sensor z ręcznie podanym ID.
+     * Sprawdza, czy sensor o takim ID już istnieje.
+     */
+    // ⭐️⭐️⭐️ DODAJ CAŁĄ TĘ METODĘ ⭐️⭐️⭐️
+    @PostMapping("/sensors")
+    public ResponseEntity<?> createSensor(@Valid @RequestBody SensorCreateRequest request) {
+        try {
+            // Cała logika jest teraz w serwisie
+            Sensor savedSensor = sensorService.createSensor(request);
+            return ResponseEntity.status(HttpStatus.CREATED).body(savedSensor);
+
+        } catch (RuntimeException e) {
+            // Serwis rzuci wyjątek (np. "Sensor już istnieje" lub "Bramka nie istnieje")
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+// ----------------------------------------------------------------------
+    // ⭐️⭐️⭐️ DODAJ CAŁĄ TĘ METODĘ ⭐️⭐️⭐️
+    // ----------------------------------------------------------------------
+    /**
+     * Aktualizuje wybrane pola sensora o podanym ID.
+     */
+    @PatchMapping("/sensors/{id}")
+    public ResponseEntity<?> updateSensor(
+            @PathVariable Long id,
+            @Valid @RequestBody SensorUpdateRequest request) {
+
+        try {
+            // Wywołaj logikę z serwisu
+            Sensor updatedSensor = sensorService.updateSensor(id, request);
+            return ResponseEntity.ok(updatedSensor); // Zwróć 200 OK z zaktualizowanym obiektem
+
+        } catch (RuntimeException e) {
+            // Przechwyć błędy (np. "Sensor nie istnieje", "Bramka nie istnieje")
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
 }
