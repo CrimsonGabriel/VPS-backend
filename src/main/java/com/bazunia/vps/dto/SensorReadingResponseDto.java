@@ -1,23 +1,34 @@
 package com.bazunia.vps.dto;
 
-/**
- * To DTO jest używane jako odpowiedź dla GET /data/android.
- * Łączy dane z SensorReading (wartość, czas) z Sensor (typ, id).
- */
+// Usunęliśmy importy LocalDateTime, bo timestamp to long
+import java.io.Serializable;
+
 public record SensorReadingResponseDto(
         String gatewayId,
         String sensorId,
-        String type, // <<< Pole, którego brakowało
+        String type,
         String value,
         long timestamp,
-        Long id // ID samego odczytu
-) {
+        Long id
+) implements Serializable {
+
     /**
-     * Konstruktor używany przez Spring Data JPA (JPA Projections) do
-     * mapowania wyników zapytania SQL bezpośrednio na ten obiekt.
+     * Konstruktor idealnie dopasowany do Twojej encji SensorReading:
+     * 1. r.gateway.id -> Long
+     * 2. r.sensor.id -> Long
+     * 3. r.sensor.type -> String (z Sensor.java)
+     * 4. r.value -> String (z SensorReading.java)
+     * 5. r.timestamp -> long (z SensorReading.java)
+     * 6. r.id -> Long
      */
     public SensorReadingResponseDto(Long gatewayId, Long sensorId, String type, String value, long timestamp, Long id) {
-        // Konwertuje ID na String, tak jak oczekuje tego VpsClientService
-        this(String.valueOf(gatewayId), String.valueOf(sensorId), type, value, timestamp, id);
+        this(
+                String.valueOf(gatewayId),
+                String.valueOf(sensorId),
+                type,
+                value,      // Przekazujemy String bezpośrednio
+                timestamp,  // Przekazujemy long bezpośrednio
+                id
+        );
     }
 }

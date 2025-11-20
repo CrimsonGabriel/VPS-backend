@@ -2,7 +2,7 @@ package com.bazunia.vps.service;
 
 import com.bazunia.vps.dto.GatewayDto;
 import com.bazunia.vps.dto.GatewayUpdateRequest;
-import com.bazunia.vps.model.Gateway; // <<< Typ Encji
+import com.bazunia.vps.model.Gateway;
 import com.bazunia.vps.model.User;
 import com.bazunia.vps.repository.GatewayRepository;
 import com.bazunia.vps.repository.SensorReadingRepository;
@@ -11,10 +11,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.bazunia.vps.dto.SensorDto;
 import com.bazunia.vps.dto.SensorUpdateRequest;
 import com.bazunia.vps.dto.SensorConfigDto;
-import com.bazunia.vps.model.Sensor; // <<< Typ Encji
+import com.bazunia.vps.model.Sensor;
 import com.bazunia.vps.repository.SensorRepository;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,18 +22,35 @@ import java.util.stream.Collectors;
 import com.bazunia.vps.dto.SensorStatusErrorDto;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import com.bazunia.vps.model.SystemSetting;
+import com.bazunia.vps.repository.SystemSettingRepository;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import com.bazunia.vps.dto.SensorReadingResponseDto;
+import java.time.ZoneId;
+
 @Service
 public class DataService {
+
+    private static final Logger log = LoggerFactory.getLogger(DataService.class);
 
     private final SensorReadingRepository sensorReadingRepository;
     private final GatewayRepository gatewayRepository;
     private final SensorRepository sensorRepository;
+    private final SystemSettingRepository systemSettingRepository;
 
     @Autowired
-    public DataService(SensorReadingRepository sensorReadingRepository, GatewayRepository gatewayRepository, SensorRepository sensorRepository) {
+    public DataService(SensorReadingRepository sensorReadingRepository,
+                       GatewayRepository gatewayRepository,
+                       SensorRepository sensorRepository,
+                       SystemSettingRepository systemSettingRepository) {
         this.sensorReadingRepository = sensorReadingRepository;
         this.gatewayRepository = gatewayRepository;
         this.sensorRepository = sensorRepository;
+        this.systemSettingRepository = systemSettingRepository;
     }
 
     @Transactional
@@ -45,16 +61,11 @@ public class DataService {
     @Transactional(readOnly = true)
     public List<GatewayDto> getGatewaysForUser(User user) {
         List<Gateway> gateways = gatewayRepository.findWithSensorsByOwner(user);
-        // Ta metoda jest OK, bo służy tylko do CZYTANIA
         return gateways.stream()
                 .map(GatewayDto::fromEntity)
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Wymaganie 2.2, 2.3: Aktualizuje bramkę (nazwa, opis, folder).
-     * <<< POPRAWKA: Zwraca Encję 'Gateway', a nie 'GatewayDto' >>>
-     */
     @Transactional
     public Gateway updateGateway(Long gatewayId, GatewayUpdateRequest request, User user) {
         Gateway gateway = gatewayRepository.findById(gatewayId)
@@ -68,13 +79,9 @@ public class DataService {
         gateway.setDescription(request.description());
         gateway.setFolder(request.folder());
 
-        // <<< POPRAWKA: Zwracamy bezpośrednio zapisaną Encję >>>
         return gatewayRepository.save(gateway);
     }
 
-    /**
-     * NOWA METODA: Aktualizuje czujnik (nazwa, opis, interwał).
-     */
     @Transactional
     public Sensor updateSensor(Long sensorId, SensorUpdateRequest request, User user) {
         Sensor sensor = sensorRepository.findById(sensorId)
@@ -84,14 +91,12 @@ public class DataService {
             throw new AccessDeniedException("Brak uprawnień do edycji tego czujnika.");
         }
 
-
         if (request.name() != null && !request.name().isEmpty()) {
             sensor.setName(request.name());
         }
         if (request.description() != null) {
             sensor.setDescription(request.description());
         }
-
         if (request.intervalSeconds() != null) {
             sensor.setIntervalSeconds(request.intervalSeconds());
         }
@@ -104,85 +109,55 @@ public class DataService {
         Gateway gateway = gatewayRepository.findById(gatewayId)
                 .orElseThrow(() -> new EntityNotFoundException("Bramka o ID " + gatewayId + " nie znaleziona."));
 
-        // Weryfikacja właściciela
         if (!Objects.equals(gateway.getOwner().getId(), user.getId())) {
             throw new AccessDeniedException("Brak uprawnień do modyfikacji tej bramki.");
         }
 
-        // <<< GŁÓWNA ZMIANA: Ustawiamy właściciela na null zamiast usuwać >>>
         gateway.setOwner(null);
         gatewayRepository.save(gateway);
     }
 
     @Transactional(readOnly = true)
     public List<SensorConfigDto> getAllSensorConfigs() {
-
         return sensorRepository.findAll().stream()
                 .map(SensorConfigDto::fromEntity)
                 .collect(Collectors.toList());
     }
-    /**
-     * Ustawia globalny interwał dla wszystkich czujników w bazie danych.
-     */
+
     @Transactional
     public int setGlobalSensorInterval(Integer interval) {
         if (interval == null || interval <= 0) {
-            // Możemy ustawić null, aby RPi użyło domyślnego, lub ustawić sztywny limit
-            // Ustawmy 60 jako bezpieczny fallback, jeśli ktoś poda 0.
             interval = 60;
         }
         return sensorRepository.setGlobalInterval(interval);
     }
-    /**
-     * ⭐️ NOWA METODA: Przełącza stan raportowania dla czujnika.
-     */
+
     @Transactional
     public Sensor toggleSensorReporting(Long sensorId, User user) {
         Sensor sensor = sensorRepository.findById(sensorId)
                 .orElseThrow(() -> new EntityNotFoundException("Czujnik o ID " + sensorId + " nie znaleziony."));
 
-        // Weryfikacja właściciela
         if (!Objects.equals(sensor.getGateway().getOwner().getId(), user.getId())) {
             throw new AccessDeniedException("Brak uprawnień do edycji tego czujnika.");
         }
 
-        // Przełącz stan
         sensor.setReportingEnabled(!sensor.isReportingEnabled());
         return sensorRepository.save(sensor);
     }
-    /**
-     * ⭐️ NOWA METODA: Sprawdza statusy bramek dla użytkownika.
-     * Wywoływana przez ApiController, aby znaleźć urządzenia offline.
-     */
+
     @Transactional(readOnly = true)
     public List<SensorStatusErrorDto> checkSensorStatuses(User user) {
-
-        // 1. Zdefiniuj próg "offline".
-        // Jeśli bramka nie wysłała danych (przez endpoint /data) w ciągu 5 minut,
-        // oznaczamy ją jako offline.
         final LocalDateTime cutoff = LocalDateTime.now().minusMinutes(5);
-
-        // 2. Przygotuj listę błędów
         List<SensorStatusErrorDto> errors = new ArrayList<>();
-
-        // 3. Pobierz wszystkie bramki i czujniki użytkownika
-        // Używamy metody, którą już masz w repozytorium (obsługuje getGatewaysForUser)
         List<Gateway> gateways = gatewayRepository.findWithSensorsByOwner(user);
 
-        // 4. Iteruj i sprawdzaj
         for (Gateway gateway : gateways) {
-
             LocalDateTime lastSeen = gateway.getLastSeen();
-
-            // 5. Sprawdź warunek błędu (Brak 'lastSeen' LUB jest starsze niż 'cutoff')
             if (lastSeen == null || lastSeen.isBefore(cutoff)) {
-
-                // 6. Stwórz czytelny komunikat
                 String lastSeenText;
                 if (lastSeen == null) {
                     lastSeenText = "nigdy";
                 } else {
-                    // Oblicz, ile minut temu to było, dla lepszego komunikatu
                     long minutesAgo = ChronoUnit.MINUTES.between(lastSeen, LocalDateTime.now());
                     if (minutesAgo == 0) {
                         lastSeenText = "ponad 5 min. temu";
@@ -192,29 +167,105 @@ public class DataService {
                 }
 
                 String message = "Bramka '" + gateway.getName() + "' jest offline. Ostatni kontakt: " + lastSeenText + ".";
-
-                // 7. Dodaj błąd do listy (pasujący do DTO)
                 errors.add(new SensorStatusErrorDto(
-                        gateway.getId(),            // entityId
-                        "GATEWAY",                  // entityType
-                        gateway.getName(),          // entityName
-                        "OFFLINE",                  // errorType
-                        message                     // readableMessage
+                        gateway.getId(),
+                        "GATEWAY",
+                        gateway.getName(),
+                        "OFFLINE",
+                        message
                 ));
-
-                // Uwaga: Jeśli bramka jest offline, celowo nie sprawdzamy
-                // jej czujników - błąd bramki jest nadrzędny.
             }
-
-            // Przyszła rozbudowa:
-            // else {
-            //   // Bramka jest ONLINE.
-            //   // Tutaj mógłbyś dodać logikę sprawdzania timestampów
-            //   // OSTATNIEGO ODCZYTU dla każdego z jej czujników,
-            //   // aby wykryć błędy pojedynczych czujników.
-            // }
         }
-
         return errors;
     }
+
+    // ========================================================
+    // === AUTOMATYCZNE CZYSZCZENIE (Retention Policy) ===
+    // ========================================================
+
+    @Scheduled(cron = "0 0 3 * * *")
+    @Transactional
+    public void performAutoCleanup() {
+        log.info("Rozpoczynanie automatycznego czyszczenia historii...");
+
+        // 1. Czyszczenie po czasie (Dni)
+        String daysStr = getSettingValue("RETENTION_DAYS");
+        if (daysStr != null && !daysStr.isEmpty()) {
+            try {
+                int days = Integer.parseInt(daysStr);
+                if (days > 0) {
+                    // Zamieniamy dni na milisekundy (long), bo tak jest w bazie
+                    long cutoffMillis = LocalDateTime.now()
+                            .minusDays(days)
+                            .atZone(ZoneId.systemDefault())
+                            .toInstant()
+                            .toEpochMilli();
+
+                    // Wywołujemy metodę repozytorium przyjmującą long
+                    sensorReadingRepository.deleteByTimestampLessThan(cutoffMillis);
+                    log.info("Usunięto rekordy starsze niż {} dni (timestamp < {}).", days, cutoffMillis);
+                }
+            } catch (NumberFormatException e) {
+                log.error("Błąd formatu RETENTION_DAYS: {}", daysStr);
+            }
+        }
+
+        // 2. Czyszczenie po ilości (Max Rekordów)
+        String maxRecStr = getSettingValue("RETENTION_MAX_RECORDS");
+        if (maxRecStr != null && !maxRecStr.isEmpty()) {
+            try {
+                long maxRecords = Long.parseLong(maxRecStr);
+                if (maxRecords > 0) {
+                    trimToSize(maxRecords);
+                }
+            } catch (NumberFormatException e) {
+                log.error("Błąd formatu RETENTION_MAX_RECORDS: {}", maxRecStr);
+            }
+        }
+        log.info("Automatyczne czyszczenie zakończone.");
+    }
+
+    // Pomocnicza metoda: Usuwa nadmiarowe rekordy, zostawiając 'limit' najnowszych
+    private void trimToSize(long limit) {
+        long count = sensorReadingRepository.count();
+        if (count <= limit) return;
+
+        var pageRequest = PageRequest.of((int) limit, 1, Sort.by(Sort.Direction.DESC, "timestamp"));
+        List<SensorReadingResponseDto> result = sensorReadingRepository.findLatestReadingsWithDetails(pageRequest);
+
+        if (!result.isEmpty()) {
+            // DTO zwraca teraz czysty 'long', więc nie musimy nic konwertować na LocalDateTime
+            long cutoffTimestamp = result.get(0).timestamp();
+
+            // Usuwamy starsze rekordy (mniejszy timestamp)
+            sensorReadingRepository.deleteByTimestampLessThan(cutoffTimestamp);
+            log.info("Przycięto tabelę do {} rekordów (limit).", limit);
+        }
+    }
+
+    // Metody dla AdminController do zarządzania ustawieniami
+    public void saveRetentionSettings(Integer days, Long maxRecords) {
+        saveSetting("RETENTION_DAYS", days != null ? days.toString() : "");
+        saveSetting("RETENTION_MAX_RECORDS", maxRecords != null ? maxRecords.toString() : "");
+    }
+
+    public RetentionConfigDto getRetentionSettings() {
+        String days = getSettingValue("RETENTION_DAYS");
+        String max = getSettingValue("RETENTION_MAX_RECORDS");
+
+        Integer d = (days != null && !days.isEmpty()) ? Integer.parseInt(days) : null;
+        Long m = (max != null && !max.isEmpty()) ? Long.parseLong(max) : null;
+
+        return new RetentionConfigDto(d, m);
+    }
+
+    private void saveSetting(String key, String value) {
+        systemSettingRepository.save(new SystemSetting(key, value));
+    }
+
+    private String getSettingValue(String key) {
+        return systemSettingRepository.findById(key).map(SystemSetting::getValue).orElse(null);
+    }
+
+    public record RetentionConfigDto(Integer retentionDays, Long maxRecords) {}
 }

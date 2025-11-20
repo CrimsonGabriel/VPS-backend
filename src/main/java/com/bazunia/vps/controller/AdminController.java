@@ -1,16 +1,16 @@
 package com.bazunia.vps.controller;
+
 import com.bazunia.vps.dto.UpdateDtos;
 import com.bazunia.vps.model.User;
 import com.bazunia.vps.repository.UserRepository;
 import com.bazunia.vps.model.Role;
-import com.bazunia.vps.service.UpdateService; // <-- NOWY IMPORT
+import com.bazunia.vps.service.UpdateService;
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal; // Można też użyć @RequestAttribute
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
-import com.bazunia.vps.dto.PasswordRequest;
 import com.bazunia.vps.service.DataService;
 import org.springframework.web.bind.annotation.PostMapping;
 import java.util.List;
@@ -18,20 +18,18 @@ import java.util.Map;
 import java.util.Optional;
 import com.bazunia.vps.dto.SensorUpdateRequest;
 import com.bazunia.vps.model.Sensor;
-import com.bazunia.vps.model.Gateway;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.NotNull;
-import java.time.LocalDateTime;
-import com.bazunia.vps.service.SensorService;
-import com.bazunia.vps.dto.SensorCreateRequest;
 import java.util.regex.Pattern;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.Collections;
 import java.util.stream.Stream;
 import java.util.ArrayList;
+import com.bazunia.vps.service.DataService.RetentionConfigDto;
+import com.bazunia.vps.model.SystemSetting;
+import com.bazunia.vps.repository.SystemSettingRepository;
+import com.bazunia.vps.service.SensorService;
+import com.bazunia.vps.dto.SensorCreateRequest;
 
 @RestController
 // Zmieniamy ścieżkę bazową na /api/admin, aby kontroler obsługiwał też inne sekcje admina
@@ -43,9 +41,10 @@ public class AdminController {
     private final PasswordEncoder passwordEncoder;
     private final UpdateService updateService;
     private final DataService dataService;
-
-
     private final SensorService sensorService;
+
+    // ⭐️ DODANO BRAKUJĄCE POLE (dzięki temu Lombok je wstrzyknie)
+    private final SystemSettingRepository systemSettingRepository;
 
     // DTOs dla uproszczenia (możesz je przenieść do pakietu dto)
     public record AdminUserRequest(
@@ -71,13 +70,13 @@ public class AdminController {
     // ----------------------------------------------------------------------
 
     // --- READ (Wszyscy Użytkownicy) ---
-    @GetMapping("/users") // <-- DODANY /users
+    @GetMapping("/users")
     public ResponseEntity<List<User>> getAllUsers() {
         return ResponseEntity.ok(userRepository.findAll());
     }
 
     // --- READ (Pobierz po ID) ---
-    @GetMapping("/users/{id}") // <-- DODANY /users
+    @GetMapping("/users/{id}")
     public ResponseEntity<User> getUserById(@PathVariable Long id) {
         Optional<User> user = userRepository.findById(id);
         return user.map(ResponseEntity::ok)
@@ -85,7 +84,7 @@ public class AdminController {
     }
 
     // --- CREATE (Dodaj Użytkownika) ---
-    @PostMapping("/users") // <-- DODANY /users
+    @PostMapping("/users")
     public ResponseEntity<User> createUser(@RequestBody AdminUserRequest request) {
         // Walidacja czy użytkownik już istnieje
         if (userRepository.findByEmail(request.email()).isPresent()) {
@@ -108,7 +107,7 @@ public class AdminController {
     }
 
     // --- UPDATE (Edytuj Użytkownika) ---
-    @PutMapping("/users/{id}") // <-- DODANY /users
+    @PutMapping("/users/{id}")
     public ResponseEntity<User> updateUser(@PathVariable Long id, @RequestBody AdminUserRequest request) {
         return userRepository.findById(id)
                 .map(existingUser -> {
@@ -128,7 +127,7 @@ public class AdminController {
     }
 
     // --- DELETE (Usuń Użytkownika) ---
-    @DeleteMapping("/users/{id}") // <-- DODANY /users
+    @DeleteMapping("/users/{id}")
     public ResponseEntity<Void> deleteUser(@PathVariable Long id) {
         Optional<User> userToDelete = userRepository.findById(id);
 
@@ -181,7 +180,7 @@ public class AdminController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-// ----------------------------------------------------------------------
+    // ----------------------------------------------------------------------
     // --- 3. ZARZĄDZANIE SENSORAMI (/api/admin/sensors/...) ---
     // ----------------------------------------------------------------------
 
@@ -189,7 +188,6 @@ public class AdminController {
      * Tworzy nowy sensor z ręcznie podanym ID.
      * Sprawdza, czy sensor o takim ID już istnieje.
      */
-    // ⭐️⭐️⭐️ DODAJ CAŁĄ TĘ METODĘ ⭐️⭐️⭐️
     @PostMapping("/sensors")
     public ResponseEntity<?> createSensor(@Valid @RequestBody SensorCreateRequest request) {
         try {
@@ -203,9 +201,6 @@ public class AdminController {
                     .body(Map.of("error", e.getMessage()));
         }
     }
-// ----------------------------------------------------------------------
-    // ⭐️⭐️⭐️ DODAJ CAŁĄ TĘ METODĘ ⭐️⭐️⭐️
-    // ----------------------------------------------------------------------
 
     /**
      * Aktualizuje wybrane pola sensora o podanym ID.
@@ -279,5 +274,78 @@ public class AdminController {
                             "Upewnij się, że plik istnieje na serwerze VPS."
                     ));
         }
+    }
+
+    // ----------------------------------------------------------------------
+    // --- 5. KONFIGURACJA HISTORII (Retention Policy) ---
+    // ----------------------------------------------------------------------
+
+    @GetMapping("/retention")
+    public ResponseEntity<RetentionConfigDto> getRetentionSettings() {
+        return ResponseEntity.ok(dataService.getRetentionSettings());
+    }
+
+    @PostMapping("/retention")
+    public ResponseEntity<?> saveRetentionSettings(@RequestBody RetentionConfigDto request) {
+        dataService.saveRetentionSettings(request.retentionDays(), request.maxRecords());
+        return ResponseEntity.ok().build();
+    }
+
+    // Opcjonalnie: Przycisk "Wyczyść teraz wg zasad" (dla niecierpliwych)
+    @PostMapping("/retention/run")
+    public ResponseEntity<?> runCleanupNow() {
+        dataService.performAutoCleanup();
+        return ResponseEntity.ok(Map.of("message", "Czyszczenie uruchomione w tle."));
+    }
+
+    @GetMapping("/retention/request")
+    public ResponseEntity<Map<String, String>> getPendingRetentionRequest() {
+        // Pobieramy wartości z tabeli ustawień, gdzie zapisał je Android
+        // Używamy instancji systemSettingRepository (mała litera)
+        String status = systemSettingRepository.findById("RETENTION_REQ_STATUS").map(SystemSetting::getValue).orElse("NONE");
+        String reqDays = systemSettingRepository.findById("RETENTION_REQ_DAYS").map(SystemSetting::getValue).orElse(null);
+        String reqSize = systemSettingRepository.findById("RETENTION_REQ_SIZE").map(SystemSetting::getValue).orElse(null);
+
+        return ResponseEntity.ok(Map.of(
+                "status", status,
+                "reqDays", reqDays != null ? reqDays : "",
+                "reqSize", reqSize != null ? reqSize : ""
+        ));
+    }
+
+    // ⭐️ 2. Podejmij decyzję (ACCEPT / REJECT)
+    @PostMapping("/retention/decision")
+    @Transactional
+    public ResponseEntity<?> handleRetentionDecision(@RequestBody Map<String, String> body) {
+        String decision = body.get("decision"); // "ACCEPT" lub "REJECT"
+
+        // Używamy instancji systemSettingRepository (mała litera) zamiast nazwy klasy
+        if ("ACCEPT".equals(decision)) {
+            // 1. Pobierz wnioskowane wartości
+            String reqDays = systemSettingRepository.findById("RETENTION_REQ_DAYS").map(SystemSetting::getValue).orElse(null);
+            String reqSize = systemSettingRepository.findById("RETENTION_REQ_SIZE").map(SystemSetting::getValue).orElse(null);
+
+            // 2. Nadpisz GŁÓWNE ustawienia (jeśli wniosek zawierał wartość)
+            if (reqDays != null && !reqDays.isEmpty()) {
+                dataService.saveRetentionSettings(Integer.parseInt(reqDays), null); // Dni
+            }
+            if (reqSize != null && !reqSize.isEmpty()) {
+                systemSettingRepository.save(new SystemSetting("RETENTION_MAX_RECORDS", reqSize));
+            }
+            // Dla pewności zapiszmy oba:
+            if (reqDays != null) systemSettingRepository.save(new SystemSetting("RETENTION_DAYS", reqDays));
+            if (reqSize != null) systemSettingRepository.save(new SystemSetting("RETENTION_MAX_RECORDS", reqSize));
+
+            // 3. Zmień status na ACCEPTED (Android to wykryje)
+            systemSettingRepository.save(new SystemSetting("RETENTION_REQ_STATUS", "ACCEPTED"));
+
+        } else if ("REJECT".equals(decision)) {
+            // Po prostu zmień status na REJECTED
+            systemSettingRepository.save(new SystemSetting("RETENTION_REQ_STATUS", "REJECTED"));
+        } else {
+            return ResponseEntity.badRequest().body("Nieznana decyzja. Użyj ACCEPT lub REJECT.");
+        }
+
+        return ResponseEntity.ok(Map.of("message", "Decyzja zapisana: " + decision));
     }
 }

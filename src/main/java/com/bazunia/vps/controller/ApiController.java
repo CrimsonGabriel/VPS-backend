@@ -6,6 +6,7 @@ import com.bazunia.vps.model.User;
 import com.bazunia.vps.model.SensorReading;
 import com.bazunia.vps.model.Gateway;
 import com.bazunia.vps.model.Sensor;
+import com.bazunia.vps.model.SystemSetting;
 
 import com.bazunia.vps.dto.TwoFaStatusDto;
 import com.bazunia.vps.dto.RegistrationRequest;
@@ -29,6 +30,7 @@ import com.bazunia.vps.repository.SensorReadingRepository;
 import com.bazunia.vps.repository.UserRepository;
 import com.bazunia.vps.repository.GatewayRepository;
 import com.bazunia.vps.repository.SensorRepository;
+import com.bazunia.vps.repository.SystemSettingRepository;
 
 import com.bazunia.vps.service.DataService;
 import com.bazunia.vps.service.StatusService;
@@ -66,7 +68,7 @@ public class ApiController {
 
     private final GatewayRepository gatewayRepository;
     private final SensorRepository sensorRepository;
-
+    private final SystemSettingRepository systemSettingRepository;
 
     private final UpdateService updateService;
     private final JwtService jwtService;
@@ -80,7 +82,8 @@ public class ApiController {
                          UpdateService updateService,
                          JwtService jwtService, AuthService authService,
                          GatewayRepository gatewayRepository,
-                         SensorRepository sensorRepository) {
+                         SensorRepository sensorRepository,
+                         SystemSettingRepository systemSettingRepository) {
         this.statusService = statusService;
         this.sensorReadingRepository = sensorReadingRepository;
         this.userRepository = userRepository;
@@ -90,6 +93,7 @@ public class ApiController {
         this.authService = authService;
         this.gatewayRepository = gatewayRepository;
         this.sensorRepository = sensorRepository;
+        this.systemSettingRepository = systemSettingRepository;
     }
 
     @GetMapping("/api/sensors/status")
@@ -209,6 +213,59 @@ public class ApiController {
         } catch (Exception e) {
             return new ResponseEntity<>("Błąd serwera podczas pobierania konfiguracji: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
+    }
+    // ⭐️⭐️⭐️ NOWE ENDPOINTY: WNIOSKOWANIE O RETENCJĘ DANYCH ⭐️⭐️⭐️
+
+    /**
+     * Android wysyła propozycję zmiany ustawień retencji.
+     * Zapisujemy to jako "wniosek" (PENDING).
+     */
+    @PostMapping("/api/retention/request")
+    public ResponseEntity<?> requestRetentionChange(
+            @RequestBody Map<String, String> request,
+            Authentication authentication) {
+
+        // Możemy logować, kto poprosił (User user = ...), ale tutaj zapiszemy po prostu wniosek
+        String days = request.get("days");
+        String size = request.get("size");
+
+        if (days == null && size == null) {
+            return ResponseEntity.badRequest().body("Musisz podać dni lub rozmiar.");
+        }
+
+        // Zapisz wniosek w bazie (używamy specjalnych kluczy dla wniosków)
+        if (days != null) systemSettingRepository.save(new SystemSetting("RETENTION_REQ_DAYS", days));
+        if (size != null) systemSettingRepository.save(new SystemSetting("RETENTION_REQ_SIZE", size));
+
+        // Ustaw status na PENDING (Oczekuje na admina)
+        systemSettingRepository.save(new SystemSetting("RETENTION_REQ_STATUS", "PENDING"));
+
+        return ResponseEntity.ok(Map.of("message", "Wniosek wysłany do administratora via Frontend."));
+    }
+
+    /**
+     * Android sprawdza status swojego wniosku (polling).
+     * Zwraca też OBECNE ustawienia, żeby wyświetlić je w UI.
+     */
+    @GetMapping("/api/retention/status")
+    public ResponseEntity<?> getRetentionRequestStatus(Authentication authentication) {
+
+        // Pobierz status wniosku
+        String status = systemSettingRepository.findById("RETENTION_REQ_STATUS")
+                .map(SystemSetting::getValue)
+                .orElse("NONE");
+
+        // Pobierz aktualnie obowiązujące ustawienia (żeby wyświetlić w Androidzie)
+        String currentDays = systemSettingRepository.findById("RETENTION_DAYS")
+                .map(SystemSetting::getValue).orElse("0");
+        String currentSize = systemSettingRepository.findById("RETENTION_MAX_RECORDS")
+                .map(SystemSetting::getValue).orElse("0");
+
+        return ResponseEntity.ok(Map.of(
+                "status", status,
+                "currentDays", currentDays,
+                "currentSize", currentSize
+        ));
     }
 
     // ⭐️ ⭐️ ⭐️ NOWY ENDPOINT (PRZENIESIONY Z ADMINA) ⭐️ ⭐️ ⭐️

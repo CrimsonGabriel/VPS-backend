@@ -86,7 +86,8 @@ public class SecurityConfig {
                                 // Inne chronione
                                 "/api/update/**",
                                 "/api/files/**",
-                                "/api/folders/**"
+                                "/api/folders/**",
+                                "/api/retention/**"
                         ).authenticated()
 
                         // --- 3. ENDPOINTY ADMINA (Wymagają Roli ADMIN) ---
