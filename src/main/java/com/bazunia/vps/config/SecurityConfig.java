@@ -61,7 +61,11 @@ public class SecurityConfig {
                                 "/api/auth/2fa/email-verify",
                                 // Reset hasła
                                 "/api/auth/request-password-reset",
-                                "/api/auth/reset-password"
+                                "/api/auth/reset-password",
+                                // frontend
+                                "/updates",
+                                "/updates/**"
+
                         ).permitAll()
 
                         // --- 2. ENDPOINTY CHRONIONE (Wymagają JWT) ---

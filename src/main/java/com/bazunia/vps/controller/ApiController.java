@@ -1,7 +1,7 @@
 // Plik: com/bazunia/vps/controller/ApiController.java
 package com.bazunia.vps.controller;
 
-
+import com.bazunia.vps.dto.UpdateDtos;
 import com.bazunia.vps.model.User;
 import com.bazunia.vps.model.SensorReading;
 import com.bazunia.vps.model.Gateway;
@@ -236,37 +236,24 @@ public class ApiController {
         }
     }
 
-    // --- ENDPOINTY DLA AKTUALIZACJI ANDROIDA ---
+// --- NOWE ENDPOINTY DLA AKTUALIZACJI (ANDROID) ---
 
-    // 1. ENDPOINT: POBIERANIE STATUSU AKTUALIZACJI (Rozwiązuje 403 na GET /api/update/status)
-    @GetMapping("/api/update/status")
-    public ResponseEntity<Map<String, String>> getUpdateStatus() {
-        // Ta metoda teraz zadziała, bo updateService jest poprawnie wstrzyknięty
-        Map<String, String> statusMap = updateService.getUpdateStatuses();
-        return ResponseEntity.ok(statusMap);
+    @GetMapping("/api/my-updates")
+    public ResponseEntity<List<UpdateDtos.ClientUpdateResponse>> getMyUpdates(Authentication authentication) {
+        User user = (User) authentication.getPrincipal();
+        return ResponseEntity.ok(updateService.getPendingUpdatesForUser(user.getId()));
     }
 
-    // 2. ENDPOINT: DECYZJA UŻYTKOWNIKA (ACCEPTED/DEFERRED) (Rozwiązuje 403 na POST /api/update/decision)
-    // ⭐️ POPRAWKA: Usunięto 'Principal principal' i zastąpiono go SecurityContextHolder
-    @PostMapping("/api/update/decision")
-    public ResponseEntity<String> recordUpdateDecision(
-            @RequestBody Map<String, String> decisionPayload) {
-
-        // 1. Walidacja danych
-        String key = decisionPayload.get("key");
-        String decision = decisionPayload.get("decision");
-
-        // ⭐️ POPRAWKA: Pobieranie emaila użytkownika z kontekstu bezpieczeństwa
-        String userEmail = SecurityContextHolder.getContext().getAuthentication().getName();
-
-        if (key == null || decision == null) {
-            return new ResponseEntity<>("Brak 'key' lub 'decision' w ładunku", HttpStatus.BAD_REQUEST);
+    @PostMapping("/api/updates/{assignmentId}/status")
+    public ResponseEntity<?> updateStatus(
+            @PathVariable Long assignmentId,
+            @RequestBody UpdateDtos.UpdateStatusRequest request) {
+        try {
+            updateService.updateAssignmentStatus(assignmentId, request.getStatus());
+            return ResponseEntity.ok(Map.of("message", "Status updated to " + request.getStatus()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
-
-        // 2. Wywołanie logiki UpdateService
-        updateService.recordDecision(userEmail, key, decision);
-
-        return ResponseEntity.ok("Decyzja o aktualizacji (" + decision + ") została zapisana.");
     }
 
 

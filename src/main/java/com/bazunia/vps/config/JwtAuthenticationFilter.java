@@ -22,7 +22,6 @@ import java.io.IOException;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
-    // Potrzebujemy UserDetailsService, aby załadować użytkownika po emailu z tokena
     private final UserDetailsService userDetailsService;
 
     @Override
@@ -33,61 +32,44 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
 
         final String authHeader = request.getHeader("Authorization");
-
-        // ⭐️⭐️ POCZĄTEK TYMCZASOWEGO LOGOWANIA ⭐️⭐️
-        // Logujemy tylko żądania do chronionego API
-        if (request.getRequestURI().startsWith("/api/")) {
-            System.out.println("DEBUG: Sprawdzanie żądania dla: " + request.getRequestURI());
-            System.out.println("DEBUG: Nagłówek Authorization: " + authHeader);
-        }
-        // ⭐️⭐️ KONIEC TYMCZASOWEGO LOGOWANIA ⭐️⭐️
-
         final String jwt;
         final String userEmail;
 
-        // 1. Sprawdź, czy żądanie zawiera nagłówek Bearer Token
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        // 2. Wyciągnij token
         jwt = authHeader.substring(7);
 
-        // 3. Wyciągnij email z tokena
         try {
             userEmail = jwtService.extractUsername(jwt);
         } catch (Exception e) {
-            // Token jest nieprawidłowy/wygaśnięty
+            // ⭐️⭐️⭐️ ZMIANA: LOGUJEMY BŁĄD ⭐️⭐️⭐️
+            System.out.println("❌ BŁĄD JWT: Nie udało się zdekodować tokena!");
+            System.out.println("❌ Powód: " + e.getMessage());
+            // e.printStackTrace(); // Odkomentuj jeśli chcesz pełny stacktrace
+
+            // Puszczamy dalej - Spring Security rzuci 401, bo Context jest pusty
             filterChain.doFilter(request, response);
             return;
         }
 
-        // 4. Jeśli email istnieje i użytkownik nie jest jeszcze zalogowany w kontekście
         if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-
-            // Wczytaj dane użytkownika (w tym role) z bazy
             UserDetails userDetails = this.userDetailsService.loadUserByUsername(userEmail);
 
-            // 5. Sprawdź, czy token jest ważny
             if (jwtService.isTokenValid(jwt, userDetails)) {
-
-                // Utwórz obiekt uwierzytelnienia Spring Security
                 UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                         userDetails,
                         null,
-                        userDetails.getAuthorities() // Wczytane role/uprawnienia (w tym Rola ADMIN)
+                        userDetails.getAuthorities()
                 );
-                authToken.setDetails(
-                        new WebAuthenticationDetailsSource().buildDetails(request)
-                );
-
-                // Ustaw obiekt uwierzytelnienia w kontekście bezpieczeństwa
+                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authToken);
+            } else {
+                System.out.println("❌ BŁĄD JWT: Token nie jest poprawny dla usera " + userEmail);
             }
         }
-
-        // 6. Przekaż żądanie dalej w łańcuchu filtrów
         filterChain.doFilter(request, response);
     }
 }

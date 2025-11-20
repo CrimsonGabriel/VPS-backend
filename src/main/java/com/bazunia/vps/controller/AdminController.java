@@ -1,5 +1,5 @@
 package com.bazunia.vps.controller;
-
+import com.bazunia.vps.dto.UpdateDtos;
 import com.bazunia.vps.model.User;
 import com.bazunia.vps.repository.UserRepository;
 import com.bazunia.vps.model.Role;
@@ -146,43 +146,39 @@ public class AdminController {
 
 
     // ----------------------------------------------------------------------
-    // --- 2. ZARZĄDZANIE AKTUALIZACJAMI (/api/admin/update/...) ---
+    // --- 2. ZARZĄDZANIE AKTUALIZACJAMI (NOWA IMPLEMENTACJA) ---
     // ----------------------------------------------------------------------
 
-    // Wymaganie 5.1 (Android): Pobieranie statusu aktualizacji (Pełna ścieżka: /api/admin/update/status)
-    @GetMapping("/update/status")
-    public ResponseEntity<Map<String, String>> getUpdateStatus() {
-        return ResponseEntity.ok(updateService.getUpdateStatuses());
+    @PostMapping("/updates")
+    public ResponseEntity<?> createUpdate(@RequestBody UpdateDtos.CreateUpdateRequest request) {
+        try {
+            return ResponseEntity.ok(updateService.createUpdate(request));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
-    // Wymaganie 5.2 (Android -> VPS): Zapisuje decyzję użytkownika (Pełna ścieżka: /api/admin/update/decision)
-    @PostMapping("/update/decision")
-    public ResponseEntity<Map<String, String>> postUpdateDecision(
-            // Używamy @AuthenticationPrincipal do pobrania zalogowanego użytkownika z JWT
-            @AuthenticationPrincipal User user,
-            @RequestBody Map<String, String> decisionRequest) {
-
-        if (user == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Brak autoryzacji użytkownika."));
-        }
-
-        String key = decisionRequest.get("key");
-        String decision = decisionRequest.get("decision");
-
-        if (key == null || decision == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Brak klucza lub decyzji."));
-        }
-
-        updateService.recordDecision(user.getEmail(), key, decision);
-
-        return ResponseEntity.ok(Map.of("message", "Decyzja zapisana."));
+    @GetMapping("/updates")
+    public ResponseEntity<List<UpdateDtos.UpdateSummaryDto>> getAllUpdates() {
+        return ResponseEntity.ok(updateService.getAllUpdatesSummary());
     }
 
-    // Wymaganie 5.1/5.2 (Admin Web): Ustawianie statusu przez Web UI
-    @PostMapping("/update/set")
-    public ResponseEntity<Map<String, String>> setUpdateStatus(@RequestBody UpdateStatusRequest request) {
-        updateService.setUpdateStatus(request.key(), request.status(), request.shouldNotify());
-        return ResponseEntity.ok(Map.of("message", String.format("Status dla %s ustawiony na %s.", request.key(), request.status())));
+    @PostMapping("/updates/{assignmentId}/resend")
+    public ResponseEntity<?> resendUpdate(@PathVariable Long assignmentId) {
+        try {
+            updateService.resendUpdate(assignmentId);
+            return ResponseEntity.ok(Map.of("message", "Update resent to PENDING status."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // Helper dla Frontendu - pobiera bramki użytkownika do dropdowna
+    @GetMapping("/users/{userId}/gateways")
+    public ResponseEntity<?> getGatewaysForUser(@PathVariable Long userId) {
+        return userRepository.findById(userId)
+                .map(user -> ResponseEntity.ok(dataService.getGatewaysForUser(user)))
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
 // ----------------------------------------------------------------------

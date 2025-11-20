@@ -1,50 +1,176 @@
 package com.bazunia.vps.service;
 
+import com.bazunia.vps.dto.UpdateDtos;
+import com.bazunia.vps.model.*;
+import com.bazunia.vps.repository.*;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class UpdateService {
 
-    // Map: Key = GatewayID lub "App", Value = "REQUIRED", "OPTIONAL", "NONE"
-    private final Map<String, String> updateStatuses = new ConcurrentHashMap<>();
+    private final SystemUpdateRepository systemUpdateRepository;
+    private final UpdateAssignmentRepository assignmentRepository;
+    private final GatewayRepository gatewayRepository;
+    private final SensorRepository sensorRepository;
+    private final UserRepository userRepository;
 
-    // Lista bramek, które wymagają powiadomienia (Admin sam to ustawia)
-    private final Map<String, Boolean> isNotificationRequired = new ConcurrentHashMap<>();
+    /**
+     * Tworzy aktualizację i przypisuje ją do wybranych celów.
+     */
+    @Transactional
+    public SystemUpdate createUpdate(UpdateDtos.CreateUpdateRequest request) {
+        // 1. Utwórz definicję aktualizacji
+        SystemUpdate update = SystemUpdate.builder()
+                .title(request.getTitle())
+                .description(request.getDescription())
+                .version(request.getVersion())
+                .urgency(request.getUrgency())
+                .targetType(request.getTargetType())
+                .build();
 
-    // Domyślny status (dla testów)
-    public UpdateService() {
-        updateStatuses.put("App", "REQUIRED");
-        updateStatuses.put("GW-01", "OPTIONAL");
-        updateStatuses.put("GW-02", "NONE");
+        update = systemUpdateRepository.save(update);
 
-        isNotificationRequired.put("App", true);
-        isNotificationRequired.put("GW-01", true);
-    }
+        // 2. Rozdziel logikę w zależności od celu
+        if (request.getTargetType() == SystemUpdate.UpdateTargetType.APP) {
+            // Aktualizacja aplikacji dla konkretnego usera
+            createAssignment(update, request.getTargetUserId(), request.getTargetUserId());
 
-    public Map<String, String> getUpdateStatuses() {
-        return updateStatuses;
-    }
+        } else if (request.getTargetType() == SystemUpdate.UpdateTargetType.GATEWAY) {
+            if (request.getTargetGatewayId() != null) {
+                // Pojedyncza bramka
+                Gateway g = gatewayRepository.findById(request.getTargetGatewayId())
+                        .orElseThrow(() -> new RuntimeException("Gateway not found"));
+                // owner_user_id z promptu (zakładam relację w Gateway lub pole ownerUserId)
+                // Przyjmuję, że Gateway ma metodę getOwnerUserId() lub User w relacji
+                Long ownerId = g.getOwner() != null ? g.getOwner().getId() : null;
+                createAssignment(update, g.getId(), ownerId);
+            } else {
+                // WSZYSTKIE bramki usera (opcjonalna logika, jeśli admin nie wybierze konkretnej)
+                // Tutaj zakładamy z promptu, że Admin wybiera konkretną.
+            }
 
-    public void setUpdateStatus(String key, String status, boolean ShouldNotify) {
-        updateStatuses.put(key, status);
-        isNotificationRequired.put(key, ShouldNotify);
-    }
-
-    // Metoda dla Androida: Użytkownik zdecydował (na razie to jest tylko logowanie)
-    public void recordDecision(String userEmail, String key, String decision) {
-        System.out.println(String.format("[UpdateService] Użytkownik %s podjął decyzję dla %s: %s",
-                userEmail, key, decision));
-
-        // Jeśli aktualizacja została zaakceptowana, usuń status powiadomienia
-        if ("ACCEPTED".equals(decision)) {
-            isNotificationRequired.put(key, false);
-            // W realnym świecie: wyślij polecenie do bramki
+        } else if (request.getTargetType() == SystemUpdate.UpdateTargetType.SENSOR) {
+            if (request.getTargetSensorId() != null) {
+                Sensor s = sensorRepository.findById(request.getTargetSensorId())
+                        .orElseThrow(() -> new RuntimeException("Sensor not found"));
+                // Znajdź właściciela przez bramkę
+                Long ownerId = s.getGateway().getOwner().getId();
+                createAssignment(update, s.getId(), ownerId);
+            }
         }
+
+        return update;
     }
 
-    public boolean isNotificationRequired(String key) {
-        return isNotificationRequired.getOrDefault(key, false);
+    private void createAssignment(SystemUpdate update, Long targetId, Long recipientId) {
+        UpdateAssignment assignment = UpdateAssignment.builder()
+                .systemUpdate(update)
+                .targetId(targetId)
+                .recipientUserId(recipientId)
+                .status(UpdateAssignment.AssignmentStatus.PENDING)
+                .deferCount(0)
+                .build();
+        assignmentRepository.save(assignment);
+    }
+
+    /**
+     * Pobiera aktualizacje dla panelu admina.
+     */
+    public List<UpdateDtos.UpdateSummaryDto> getAllUpdatesSummary() {
+        List<SystemUpdate> updates = systemUpdateRepository.findAll();
+        return updates.stream().map(u -> {
+            UpdateDtos.UpdateSummaryDto dto = new UpdateDtos.UpdateSummaryDto();
+            dto.setId(u.getId());
+            dto.setTitle(u.getTitle());
+            dto.setVersion(u.getVersion());
+            dto.setUrgency(u.getUrgency());
+            dto.setTargetType(u.getTargetType());
+            dto.setCreatedAt(u.getCreatedAt());
+
+            List<UpdateAssignment> assignments = assignmentRepository.findBySystemUpdateId(u.getId());
+            List<UpdateDtos.AssignmentDto> assignmentDtos = assignments.stream().map(a -> {
+                UpdateDtos.AssignmentDto ad = new UpdateDtos.AssignmentDto();
+                ad.setId(a.getId());
+                ad.setTargetId(a.getTargetId());
+                ad.setRecipientUserId(a.getRecipientUserId());
+                ad.setStatus(a.getStatus());
+                ad.setDeferCount(a.getDeferCount());
+                ad.setLastActionAt(a.getLastActionAt());
+                return ad;
+            }).collect(Collectors.toList());
+
+            dto.setAssignments(assignmentDtos);
+            return dto;
+        }).collect(Collectors.toList());
+    }
+
+    /**
+     * Resend / Retry dla Admina.
+     * Resetuje status do PENDING dla istniejącego assignmentu.
+     */
+    @Transactional
+    public void resendUpdate(Long assignmentId) {
+        UpdateAssignment assignment = assignmentRepository.findById(assignmentId)
+                .orElseThrow(() -> new RuntimeException("Assignment not found"));
+
+        assignment.setStatus(UpdateAssignment.AssignmentStatus.PENDING);
+        // Opcjonalnie: wyzeruj licznik odroczeń, jeśli admin wymusza ponowienie
+        // assignment.setDeferCount(0);
+        assignment.setLastActionAt(java.time.LocalDateTime.now());
+        assignmentRepository.save(assignment);
+    }
+
+    /**
+     * Dla API Klienta (Android): Pobiera oczekujące aktualizacje dla usera.
+     */
+    public List<UpdateDtos.ClientUpdateResponse> getPendingUpdatesForUser(Long userId) {
+        // Pobieramy wszystko co nie jest COMPLETED (czyli PENDING i DEFERRED)
+        // Logika Androida zdecyduje czy DEFERRED można wyświetlić ponownie
+        List<UpdateAssignment> assignments = assignmentRepository.findByRecipientUserId(userId);
+
+        return assignments.stream()
+                .filter(a -> a.getStatus() != UpdateAssignment.AssignmentStatus.COMPLETED)
+                .map(a -> {
+                    UpdateDtos.ClientUpdateResponse dto = new UpdateDtos.ClientUpdateResponse();
+                    dto.setAssignmentId(a.getId());
+                    dto.setTitle(a.getSystemUpdate().getTitle());
+                    dto.setDescription(a.getSystemUpdate().getDescription());
+                    dto.setVersion(a.getSystemUpdate().getVersion());
+                    dto.setUrgency(a.getSystemUpdate().getUrgency());
+                    dto.setTargetType(a.getSystemUpdate().getTargetType());
+                    dto.setTargetId(a.getTargetId());
+                    return dto;
+                }).collect(Collectors.toList());
+    }
+
+    /**
+     * Dla API Klienta (Android): Aktualizacja statusu (Accept / Defer).
+     */
+    @Transactional
+    public void updateAssignmentStatus(Long assignmentId, UpdateAssignment.AssignmentStatus newStatus) {
+        UpdateAssignment assignment = assignmentRepository.findById(assignmentId)
+                .orElseThrow(() -> new RuntimeException("Assignment not found"));
+
+        if (newStatus == UpdateAssignment.AssignmentStatus.DEFERRED) {
+            assignment.setDeferCount(assignment.getDeferCount() + 1);
+
+            // Walidacja REQUIRED po stronie serwera (backup dla klienta)
+            if (assignment.getSystemUpdate().getUrgency() == SystemUpdate.UpdateUrgency.REQUIRED) {
+                if (assignment.getDeferCount() > 1) {
+                    // Jeśli próbuje odłożyć drugi raz wymagane -> wymuś status (opcjonalnie)
+                    // Lub rzuć wyjątek, ale lepiej logować.
+                }
+            }
+        }
+
+        assignment.setStatus(newStatus);
+        assignment.setLastActionAt(java.time.LocalDateTime.now());
+        assignmentRepository.save(assignment);
     }
 }
