@@ -25,6 +25,14 @@ import jakarta.validation.constraints.NotNull;
 import java.time.LocalDateTime;
 import com.bazunia.vps.service.SensorService;
 import com.bazunia.vps.dto.SensorCreateRequest;
+import java.util.regex.Pattern;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.Collections;
+import java.util.stream.Stream;
+import java.util.ArrayList;
+
 @RestController
 // Zmieniamy ścieżkę bazową na /api/admin, aby kontroler obsługiwał też inne sekcje admina
 @RequestMapping("/api/admin")
@@ -38,20 +46,24 @@ public class AdminController {
 
 
     private final SensorService sensorService;
+
     // DTOs dla uproszczenia (możesz je przenieść do pakietu dto)
     public record AdminUserRequest(
             String email,
             String password, // Opcjonalne: jeśli podane, hasło zostanie zmienione
             String name,
-            boolean isAdmin
-    ) {}
+            boolean isAdmin,
+            boolean enabled
+    ) {
+    }
 
     // DTOs dla aktualizacji
     public record UpdateStatusRequest(
             String key,     // "App", "GW-01", "Sensor-X"
             String status,  // "REQUIRED", "OPTIONAL", "NONE"
             boolean shouldNotify // Czy Android ma wyświetlić powiadomienie
-    ) {}
+    ) {
+    }
 
 
     // ----------------------------------------------------------------------
@@ -91,7 +103,7 @@ public class AdminController {
         newUser.setRole(request.isAdmin() ? Role.ADMIN : Role.USER);
         newUser.setPassword(passwordEncoder.encode(request.password())); // Haszowanie hasła
         newUser.setTwoFactorEnabled(false); // Domyślnie 2FA wyłączone
-
+        newUser.setEnabled(request.enabled());
         return ResponseEntity.status(HttpStatus.CREATED).body(userRepository.save(newUser));
     }
 
@@ -103,6 +115,7 @@ public class AdminController {
                     existingUser.setEmail(request.email());
                     existingUser.setName(request.name());
                     existingUser.setRole(request.isAdmin() ? Role.ADMIN : Role.USER);
+                    existingUser.setEnabled(request.enabled());
 
                     // Jeśli w formularzu podano nowe hasło, hashujemy i zmieniamy
                     if (request.password() != null && !request.password().isEmpty()) {
@@ -197,6 +210,7 @@ public class AdminController {
 // ----------------------------------------------------------------------
     // ⭐️⭐️⭐️ DODAJ CAŁĄ TĘ METODĘ ⭐️⭐️⭐️
     // ----------------------------------------------------------------------
+
     /**
      * Aktualizuje wybrane pola sensora o podanym ID.
      */
@@ -214,6 +228,60 @@ public class AdminController {
             // Przechwyć błędy (np. "Sensor nie istnieje", "Bramka nie istnieje")
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    // --- 4. MULTI-LOG SYSTEM (/api/admin/logs?type=...) ---
+    // ----------------------------------------------------------------------
+
+    @GetMapping("/logs")
+    public ResponseEntity<List<String>> getAppLogs(
+            @RequestParam(defaultValue = "out") String type // Domyślnie PM2 Output
+    ) {
+        String logFilePath;
+
+        // Wybór pliku na podstawie parametru ?type=
+        switch (type) {
+            case "error":
+                // Ścieżka z Twojego screena (Error Log)
+                logFilePath = "/home/ubuntu/.pm2/logs/bazunia-app-spring-error.log";
+                break;
+            case "server":
+                // Plik wewnętrzny Springa (w katalogu roboczym)
+                logFilePath = "server.log";
+                break;
+            case "out":
+            default:
+                // Ścieżka z Twojego screena (Out Log)
+                logFilePath = "/home/ubuntu/.pm2/logs/bazunia-app-spring-out.log";
+                break;
+        }
+
+        int linesToRead = 300; // Czytamy ostatnie 300 linii
+
+        try (Stream<String> lines = Files.lines(Paths.get(logFilePath))) {
+            List<String> allLines = lines.toList();
+            List<String> lastLines = new ArrayList<>();
+
+            int start = Math.max(0, allLines.size() - linesToRead);
+            lastLines = allLines.subList(start, allLines.size());
+
+            // Usuwanie kodów kolorów ANSI (PM2 je dodaje, a w przeglądarce wyglądają jak śmieci [32m...)
+            Pattern ansiPattern = Pattern.compile("\\x1B\\[[0-9;]*[a-zA-Z]");
+            List<String> cleanLogs = lastLines.stream()
+                    .map(line -> ansiPattern.matcher(line).replaceAll(""))
+                    .toList();
+
+            return ResponseEntity.ok(cleanLogs);
+
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(List.of(
+                            "Błąd odczytu pliku logów (" + type + "): " + e.getMessage(),
+                            "Sprawdzana ścieżka: " + logFilePath,
+                            "Upewnij się, że plik istnieje na serwerze VPS."
+                    ));
         }
     }
 }
