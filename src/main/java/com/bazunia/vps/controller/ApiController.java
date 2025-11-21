@@ -25,6 +25,7 @@ import com.bazunia.vps.dto.SensorUpdateRequest;
 import com.bazunia.vps.dto.SensorConfigDto;
 import com.bazunia.vps.dto.PasswordRequest;
 import com.bazunia.vps.dto.SensorStatusErrorDto;
+import com.bazunia.vps.dto.RiskReportDto;
 
 import com.bazunia.vps.repository.SensorReadingRepository;
 import com.bazunia.vps.repository.UserRepository;
@@ -311,6 +312,13 @@ public class ApiController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
+    }
+    // ⭐️⭐️⭐️ NOWY ENDPOINT: RAPORT BEZPIECZEŃSTWA ⭐️⭐️⭐️
+    @GetMapping("/api/status/risk-report")
+    public ResponseEntity<RiskReportDto> getRiskReport(Authentication authentication) {
+        User user = (User) authentication.getPrincipal();
+        RiskReportDto report = dataService.generateRiskReport(user);
+        return ResponseEntity.ok(report);
     }
 
 

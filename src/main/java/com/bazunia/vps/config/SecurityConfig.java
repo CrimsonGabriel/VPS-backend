@@ -75,6 +75,7 @@ public class SecurityConfig {
                                 "/api/gateways",        // Pobieranie listy bramek
                                 "/api/gateways/**",     // Edycja i usuwanie bramek
                                 "/api/sensors/**",
+                                "/api/status/**",
                                 // Zarządzanie kontem (w tym 2FA)
                                 "/api/user/me",
                                 "/api/user/set-password",

@@ -9,5 +9,7 @@ import java.util.List;
 public interface GatewayRepository extends JpaRepository<Gateway, Long> {
     @Query("SELECT g FROM Gateway g LEFT JOIN FETCH g.sensors WHERE g.owner = :user")
     List<Gateway> findWithSensorsByOwner(User user);
+    List<Gateway> findAllByOwner(User owner);
+
 
 }

@@ -31,7 +31,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.bazunia.vps.dto.SensorReadingResponseDto;
 import java.time.ZoneId;
-
+import com.bazunia.vps.dto.RiskItemDto;
+import com.bazunia.vps.dto.RiskReportDto;
+import java.util.Optional;
+import com.bazunia.vps.model.SensorReading;
 @Service
 public class DataService {
 
@@ -267,5 +270,72 @@ public class DataService {
         return systemSettingRepository.findById(key).map(SystemSetting::getValue).orElse(null);
     }
 
-    public record RetentionConfigDto(Integer retentionDays, Long maxRecords) {}
+    public record RetentionConfigDto(Integer retentionDays, Long maxRecords) {
+    }
+
+    public RiskReportDto generateRiskReport(User user) {
+        List<RiskItemDto> risks = new ArrayList<>();
+
+        // Używamy metody findWithSensorsByOwner, bo od razu pobiera sensory (wydajniej)
+        // Zastępuje to błędne findAllByUser
+        List<Gateway> userGateways = gatewayRepository.findWithSensorsByOwner(user);
+
+        for (Gateway gw : userGateways) {
+            if (gw.getSensors() == null) continue;
+
+            for (Sensor sensor : gw.getSensors()) {
+                // Pomiń wyłączone z raportowania
+                if (!sensor.isReportingEnabled()) continue;
+
+                // Pobierz OSTATNI odczyt dla czujnika (zwraca Optional)
+                Optional<SensorReading> lastReadingOpt = sensorReadingRepository.findTopBySensorOrderByTimestampDesc(sensor);
+
+                if (lastReadingOpt.isPresent()) {
+                    // .get() jest teraz bezpieczne, bo sprawdziliśmy isPresent()
+                    SensorReading reading = lastReadingOpt.get();
+                    String valStr = reading.getValue();
+
+                    String type = sensor.getType() != null ? sensor.getType().toUpperCase() : "";
+                    String name = sensor.getName();
+
+                    try {
+                        // 1. Logika dla ŚWIATŁA (zakładamy 1.0 = ON)
+                        if (type.contains("LIGHT") || type.contains("SWIATLO")) {
+                            double val = Double.parseDouble(valStr);
+                            if (val > 0.5) {
+                                risks.add(new RiskItemDto(name, "Światło włączone", "light"));
+                            }
+                        }
+
+                        // 2. Logika dla OKNA/DRZWI (zakładamy 0.0 = OTWARTE, jak w kontaktronach)
+                        if (type.contains("DOOR") || type.contains("WINDOW") || type.contains("KONTAKTRON")) {
+                            // Uwaga: dostosuj warunek do swoich czujników.
+                            // Często 1=Zamknięte, 0=Otwarte.
+                            if ("0.0".equals(valStr) || "0".equals(valStr)) {
+                                risks.add(new RiskItemDto(name, "Otwarte", "window"));
+                            }
+                        }
+
+                        // 3. Logika PROGÓW (Thresholds) z bazy danych
+                        double val = Double.parseDouble(valStr);
+
+                        if (sensor.getAlarmThresholdHigh() != null && val > sensor.getAlarmThresholdHigh()) {
+                            risks.add(new RiskItemDto(name, "Przekroczono MAX: " + val, "warning"));
+                        }
+
+                        if (sensor.getAlarmThresholdLow() != null && val < sensor.getAlarmThresholdLow()) {
+                            risks.add(new RiskItemDto(name, "Poniżej MIN: " + val, "warning"));
+                        }
+
+                    } catch (NumberFormatException e) {
+                        // Ignorujemy wartości, których nie da się zamienić na liczbę (np. "ERR")
+                    }
+                }
+            }
+        }
+
+        boolean isSafe = risks.isEmpty();
+        return new RiskReportDto(isSafe, risks.size(), risks);
+    }
 }
+
