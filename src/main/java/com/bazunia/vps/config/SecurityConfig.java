@@ -71,12 +71,14 @@ public class SecurityConfig {
                         // --- 2. ENDPOINTY CHRONIONE (Wymagają JWT) ---
                         .requestMatchers(
                                 // <<< POPRAWKA: JAWNIE ZEZWÓL NA TE ŚCIEŻKI >>>
-                                "/data/android",        // Pobieranie odczytów przez appkę
-                                "/api/gateways",        // Pobieranie listy bramek
-                                "/api/gateways/**",     // Edycja i usuwanie bramek
+                                "/data/android",
+                                "/api/gateways",
+                                "/api/gateways/share",
+                                "/api/gateways/**",
                                 "/api/sensors/**",
                                 "/api/status/**",
-                                // Zarządzanie kontem (w tym 2FA)
+                                "/api/users/**",
+                                "/api/favorites/**",
                                 "/api/user/me",
                                 "/api/user/set-password",
                                 "/api/user/change-password",
@@ -84,7 +86,6 @@ public class SecurityConfig {
                                 "/api/auth/2fa/setup",
                                 "/api/auth/2fa/verify",
                                 "/api/auth/2fa/disable",
-                                // Inne chronione
                                 "/api/update/**",
                                 "/api/files/**",
                                 "/api/folders/**",

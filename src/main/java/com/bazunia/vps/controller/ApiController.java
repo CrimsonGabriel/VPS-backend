@@ -7,7 +7,9 @@ import com.bazunia.vps.model.SensorReading;
 import com.bazunia.vps.model.Gateway;
 import com.bazunia.vps.model.Sensor;
 import com.bazunia.vps.model.SystemSetting;
-
+import com.bazunia.vps.model.UserGatewayPermission;
+import com.bazunia.vps.model.UserGatewayPermissionId;
+import com.bazunia.vps.dto.SensorDto;
 import com.bazunia.vps.dto.TwoFaStatusDto;
 import com.bazunia.vps.dto.RegistrationRequest;
 import com.bazunia.vps.dto.StatusResponse;
@@ -20,18 +22,21 @@ import com.bazunia.vps.dto.SimpleDataRequest;
 import com.bazunia.vps.dto.GatewayUpdateRequest;
 import com.bazunia.vps.dto.SensorReadingResponseDto;
 import com.bazunia.vps.dto.GatewayDto;
-import com.bazunia.vps.dto.SensorDto;
 import com.bazunia.vps.dto.SensorUpdateRequest;
 import com.bazunia.vps.dto.SensorConfigDto;
 import com.bazunia.vps.dto.PasswordRequest;
 import com.bazunia.vps.dto.SensorStatusErrorDto;
 import com.bazunia.vps.dto.RiskReportDto;
+import com.bazunia.vps.dto.ShareDto;
+
 
 import com.bazunia.vps.repository.SensorReadingRepository;
 import com.bazunia.vps.repository.UserRepository;
 import com.bazunia.vps.repository.GatewayRepository;
 import com.bazunia.vps.repository.SensorRepository;
 import com.bazunia.vps.repository.SystemSettingRepository;
+import com.bazunia.vps.repository.UserGatewayPermissionRepository;
+
 
 import com.bazunia.vps.service.DataService;
 import com.bazunia.vps.service.StatusService;
@@ -40,7 +45,6 @@ import com.bazunia.vps.service.AuthService;
 import com.bazunia.vps.service.JwtService;
 
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -56,6 +60,7 @@ import jakarta.persistence.EntityNotFoundException;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.Optional;
 
 @RestController
 public class ApiController {
@@ -74,6 +79,7 @@ public class ApiController {
     private final UpdateService updateService;
     private final JwtService jwtService;
     private final AuthService authService;
+    private final UserGatewayPermissionRepository permissionRepository;
 
     @Autowired
     public ApiController(StatusService statusService,
@@ -84,7 +90,8 @@ public class ApiController {
                          JwtService jwtService, AuthService authService,
                          GatewayRepository gatewayRepository,
                          SensorRepository sensorRepository,
-                         SystemSettingRepository systemSettingRepository) {
+                         SystemSettingRepository systemSettingRepository,
+                         UserGatewayPermissionRepository permissionRepository) {
         this.statusService = statusService;
         this.sensorReadingRepository = sensorReadingRepository;
         this.userRepository = userRepository;
@@ -95,6 +102,7 @@ public class ApiController {
         this.gatewayRepository = gatewayRepository;
         this.sensorRepository = sensorRepository;
         this.systemSettingRepository = systemSettingRepository;
+        this.permissionRepository = permissionRepository;
     }
 
     @GetMapping("/api/sensors/status")
@@ -553,16 +561,16 @@ public class ApiController {
     }
 
     @PutMapping("/api/gateways/{id}")
-    public ResponseEntity<Gateway> updateGateway( // <<< POPRAWKA TYPU
-                                                  @PathVariable Long id,
-                                                  @RequestBody GatewayUpdateRequest request,
-                                                  Authentication authentication) {
+    public ResponseEntity<GatewayDto> updateGateway( // ZMIANA: Zwracamy GatewayDto
+                                                     @PathVariable Long id,
+                                                     @RequestBody GatewayUpdateRequest request,
+                                                     Authentication authentication) {
 
         User user = (User) authentication.getPrincipal();
         try {
-            // <<< POPRAWKA TYPU: Wywołujemy metodę zwracającą Encję >>>
             Gateway updatedGateway = dataService.updateGateway(id, request, user);
-            return ResponseEntity.ok(updatedGateway);
+            // ZMIANA: Mapujemy na DTO przed wysłaniem
+            return ResponseEntity.ok(GatewayDto.fromEntity(updatedGateway));
         } catch (EntityNotFoundException e) {
             return ResponseEntity.notFound().build();
         } catch (AccessDeniedException e) {
@@ -570,19 +578,17 @@ public class ApiController {
         }
     }
 
-    /**
-     * <<< NOWY ENDPOINT: Dodajemy brakującą metodę do aktualizacji czujnika >>>
-     */
     @PutMapping("/api/sensors/{id}")
-    public ResponseEntity<Sensor> updateSensor(
-            @PathVariable Long id,
-            @RequestBody SensorUpdateRequest request,
-            Authentication authentication) {
+    public ResponseEntity<SensorDto> updateSensor( // ZMIANA: Zwracamy SensorDto
+                                                   @PathVariable Long id,
+                                                   @RequestBody SensorUpdateRequest request,
+                                                   Authentication authentication) {
 
         User user = (User) authentication.getPrincipal();
         try {
             Sensor updatedSensor = dataService.updateSensor(id, request, user);
-            return ResponseEntity.ok(updatedSensor);
+            // ZMIANA: Mapujemy na DTO
+            return ResponseEntity.ok(SensorDto.fromEntity(updatedSensor));
         } catch (EntityNotFoundException e) {
             return ResponseEntity.notFound().build();
         } catch (AccessDeniedException e) {
@@ -590,21 +596,16 @@ public class ApiController {
         }
     }
 
-    /**
-     * ⭐️ NOWY ENDPOINT: Włącza/wyłącza wysyłanie odczytów przez czujnik.
-     * Używany przez Androida (np. Switch w SensorDetailActivity).
-     */
     @PostMapping("/api/sensors/{id}/toggle-reporting")
-    public ResponseEntity<Sensor> toggleSensorReporting(
-            @PathVariable Long id,
-            Authentication authentication) {
+    public ResponseEntity<SensorDto> toggleSensorReporting( // ZMIANA: Zwracamy SensorDto
+                                                            @PathVariable Long id,
+                                                            Authentication authentication) {
 
         User user = (User) authentication.getPrincipal();
         try {
-            // Wywołujemy nową metodę z serwisu
             Sensor updatedSensor = dataService.toggleSensorReporting(id, user);
-            // Zwracamy zaktualizowany obiekt sensora (może się przydać w appce)
-            return ResponseEntity.ok(updatedSensor);
+            // ZMIANA: Mapujemy na DTO
+            return ResponseEntity.ok(SensorDto.fromEntity(updatedSensor));
         } catch (EntityNotFoundException e) {
             return ResponseEntity.notFound().build();
         } catch (AccessDeniedException e) {
@@ -630,4 +631,127 @@ public class ApiController {
         }
     }
 
+    // ============================================================================
+    // ===                    SEKCJA UDOSTĘPNIANIA BRAMEK (SHARING)             ===
+    // ============================================================================
+
+    /**
+     * 1. Pobierz listę użytkowników, którym MOŻNA udostępnić bramkę.
+     * Filtruje:
+     * - Samego siebie (nie udostępniamy sobie)
+     * - Adminów (zakładamy, że admin ma dostęp do wszystkiego lub nie chcemy mu śmiecić)
+     */
+    @GetMapping("/api/users/available-for-share")
+    public ResponseEntity<List<ShareDto.UserPickDto>> getUsersForShare(Authentication authentication) {
+        User currentUser = getAuthenticatedUser(authentication);
+
+        List<ShareDto.UserPickDto> availableUsers = userRepository.findAll().stream()
+                // Wyklucz samego siebie
+                .filter(u -> !u.getId().equals(currentUser.getId()))
+                // Wyklucz adminów (zakładam, że rola to Enum lub String, dostosuj warunek jeśli masz inaczej)
+                .filter(u -> u.getRole() != null && "USER".equals(u.getRole().toString()))
+                .map(u -> new ShareDto.UserPickDto(u.getId(), u.getEmail()))
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(availableUsers);
+    }
+
+    /**
+     * 2. Pobierz listę osób, którym TA bramka jest już udostępniona.
+     */
+    @GetMapping("/api/gateways/{gatewayId}/shares")
+    public ResponseEntity<?> getGatewayShares(@PathVariable Long gatewayId, Authentication authentication) {
+        User currentUser = getAuthenticatedUser(authentication);
+
+        Gateway gateway = gatewayRepository.findById(gatewayId)
+                .orElseThrow(() -> new EntityNotFoundException("Gateway not found"));
+
+        // Tylko właściciel może widzieć, komu udostępnił
+        if (!gateway.getOwner().getId().equals(currentUser.getId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Only owner can view shares.");
+        }
+
+        List<ShareDto.SharedUserDto> shares = permissionRepository.findByGatewayId(gatewayId).stream()
+                .map(perm -> new ShareDto.SharedUserDto(
+                        perm.getUser().getId(),
+                        perm.getUser().getEmail(),
+                        perm.getPermissionLevel()
+                ))
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(shares);
+    }
+
+    /**
+     * 3. Udostępnij bramkę (Dodaj lub Zaktualizuj uprawnienie).
+     */
+    @PostMapping("/api/gateways/share")
+    public ResponseEntity<?> shareGateway(@RequestBody ShareDto.ShareGatewayRequest request, Authentication authentication) {
+        // --- DEBUG START ---
+        System.out.println("--- DEBUG: Próba udostępnienia bramki ---");
+        if (authentication == null) {
+            System.out.println("DEBUG: Authentication is NULL!");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("No authentication");
+        }
+        User currentUser = getAuthenticatedUser(authentication);
+        System.out.println("DEBUG: User ID: " + currentUser.getId() + ", Email: " + currentUser.getEmail());
+        System.out.println("DEBUG: Request GatewayID: " + request.getGatewayId());
+        System.out.println("DEBUG: Request TargetUserID: " + request.getTargetUserId());
+        // --- DEBUG END ---
+
+        Gateway gateway = gatewayRepository.findById(request.getGatewayId())
+                .orElseThrow(() -> new EntityNotFoundException("Gateway not found"));
+
+        // 1. Sprawdź czy jesteś właścicielem
+        if (!gateway.getOwner().getId().equals(currentUser.getId())) {
+            System.out.println("DEBUG: Brak uprawnień właściciela. OwnerID=" + gateway.getOwner().getId());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Only owner can share gateway.");
+        }
+
+        // 2. Znajdź usera docelowego
+        User targetUser = userRepository.findById(request.getTargetUserId())
+                .orElseThrow(() -> new EntityNotFoundException("Target user not found"));
+
+        // 3. Stwórz lub zaktualizuj uprawnienie
+        UserGatewayPermissionId permId = new UserGatewayPermissionId(targetUser.getId(), gateway.getId());
+
+        UserGatewayPermission permission = new UserGatewayPermission();
+        permission.setId(permId);
+        permission.setUser(targetUser);
+        permission.setGateway(gateway);
+        permission.setPermissionLevel(request.getPermissionLevel()); // VIEW lub FULL_ACCESS
+
+        permissionRepository.save(permission);
+
+        System.out.println("DEBUG: Sukces. Udostępniono.");
+        return ResponseEntity.ok(Map.of("message", "Gateway shared successfully with " + targetUser.getEmail()));
+    }
+
+    /**
+     * 4. Usuń udostępnienie (Odbierz dostęp).
+     */
+    @DeleteMapping("/api/gateways/{gatewayId}/share/{userId}")
+    public ResponseEntity<?> removeShare(
+            @PathVariable Long gatewayId,
+            @PathVariable Long userId,
+            Authentication authentication) {
+
+        User currentUser = getAuthenticatedUser(authentication);
+        Gateway gateway = gatewayRepository.findById(gatewayId)
+                .orElseThrow(() -> new EntityNotFoundException("Gateway not found"));
+
+        // Tylko właściciel może odbierać uprawnienia
+        if (!gateway.getOwner().getId().equals(currentUser.getId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Only owner can remove shares.");
+        }
+
+        Optional<UserGatewayPermission> permission = permissionRepository.findByGatewayIdAndUserId(gatewayId, userId);
+
+        if (permission.isPresent()) {
+            permissionRepository.delete(permission.get());
+            return ResponseEntity.ok(Map.of("message", "Access removed."));
+        } else {
+            return ResponseEntity.notFound().build();
+        }
+    }
 }

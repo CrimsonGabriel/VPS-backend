@@ -408,7 +408,12 @@ public class AuthService {
         User user = getUserFromJwt(jwtToken);
 
         // Zwracamy nowy, prosty obiekt DTO
-        return new UserDetailsResponse(user.getEmail(), user.getName());
+        return new UserDetailsResponse(
+                user.getId(),   // <--- DODAJ TO (musi pasować do kolejności w DTO)
+                user.getEmail(),
+                user.getName(),
+                user.getRole().name()
+        );
     }
 // ⭐️⭐️ NOWA METODA ⭐️⭐️
     /**

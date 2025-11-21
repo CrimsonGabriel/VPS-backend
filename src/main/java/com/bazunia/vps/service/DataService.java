@@ -35,6 +35,10 @@ import com.bazunia.vps.dto.RiskItemDto;
 import com.bazunia.vps.dto.RiskReportDto;
 import java.util.Optional;
 import com.bazunia.vps.model.SensorReading;
+import com.bazunia.vps.repository.UserGatewayPermissionRepository;
+import com.bazunia.vps.model.UserGatewayPermission;
+import com.bazunia.vps.model.PermissionLevel;
+
 @Service
 public class DataService {
 
@@ -44,16 +48,19 @@ public class DataService {
     private final GatewayRepository gatewayRepository;
     private final SensorRepository sensorRepository;
     private final SystemSettingRepository systemSettingRepository;
+    private final UserGatewayPermissionRepository permissionRepository;
 
     @Autowired
     public DataService(SensorReadingRepository sensorReadingRepository,
                        GatewayRepository gatewayRepository,
                        SensorRepository sensorRepository,
-                       SystemSettingRepository systemSettingRepository) {
+                       SystemSettingRepository systemSettingRepository,
+                       UserGatewayPermissionRepository permissionRepository) { // Wstrzykujemy nowe repo
         this.sensorReadingRepository = sensorReadingRepository;
         this.gatewayRepository = gatewayRepository;
         this.sensorRepository = sensorRepository;
         this.systemSettingRepository = systemSettingRepository;
+        this.permissionRepository = permissionRepository;
     }
 
     @Transactional
@@ -63,20 +70,22 @@ public class DataService {
 
     @Transactional(readOnly = true)
     public List<GatewayDto> getGatewaysForUser(User user) {
-        List<Gateway> gateways = gatewayRepository.findWithSensorsByOwner(user);
+        List<Gateway> gateways = gatewayRepository.findAllOwnedAndShared(user.getId());
         return gateways.stream()
                 .map(GatewayDto::fromEntity)
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Aktualizacja bramki. Wymaga bycia WŁAŚCICIELEM lub posiadania uprawnień FULL_ACCESS.
+     */
     @Transactional
     public Gateway updateGateway(Long gatewayId, GatewayUpdateRequest request, User user) {
         Gateway gateway = gatewayRepository.findById(gatewayId)
                 .orElseThrow(() -> new EntityNotFoundException("Bramka o ID " + gatewayId + " nie znaleziona."));
 
-        if (!Objects.equals(gateway.getOwner().getId(), user.getId())) {
-            throw new AccessDeniedException("Brak uprawnień do edycji tej bramki.");
-        }
+        // Sprawdź uprawnienia (Owner lub Full Access)
+        validateWriteAccess(gateway, user);
 
         gateway.setName(request.name());
         gateway.setDescription(request.description());
@@ -85,14 +94,16 @@ public class DataService {
         return gatewayRepository.save(gateway);
     }
 
+    /**
+     * Aktualizacja czujnika. Wymaga bycia WŁAŚCICIELEM bramki lub uprawnień FULL_ACCESS.
+     */
     @Transactional
     public Sensor updateSensor(Long sensorId, SensorUpdateRequest request, User user) {
         Sensor sensor = sensorRepository.findById(sensorId)
                 .orElseThrow(() -> new EntityNotFoundException("Czujnik o ID " + sensorId + " nie znaleziony."));
 
-        if (!Objects.equals(sensor.getGateway().getOwner().getId(), user.getId())) {
-            throw new AccessDeniedException("Brak uprawnień do edycji tego czujnika.");
-        }
+        // Sprawdź uprawnienia do bramki nadrzędnej
+        validateWriteAccess(sensor.getGateway(), user);
 
         if (request.name() != null && !request.name().isEmpty()) {
             sensor.setName(request.name());
@@ -106,19 +117,68 @@ public class DataService {
 
         return sensorRepository.save(sensor);
     }
+    /**
+     * Przełączanie raportowania. Wymaga Ownera lub FULL_ACCESS.
+     */
+    @Transactional
+    public Sensor toggleSensorReporting(Long sensorId, User user) {
+        Sensor sensor = sensorRepository.findById(sensorId)
+                .orElseThrow(() -> new EntityNotFoundException("Czujnik o ID " + sensorId + " nie znaleziony."));
 
+        validateWriteAccess(sensor.getGateway(), user);
+
+        sensor.setReportingEnabled(!sensor.isReportingEnabled());
+        return sensorRepository.save(sensor);
+    }
+
+    /**
+     * Usuwanie przypisania bramki - TYLKO DLA WŁAŚCICIELA.
+     * Współużytkownik nie może "usunąć" bramki (może tylko odejść, co robi się innym endpointem).
+     */
     @Transactional
     public void disassociateGateway(Long gatewayId, User user) {
         Gateway gateway = gatewayRepository.findById(gatewayId)
                 .orElseThrow(() -> new EntityNotFoundException("Bramka o ID " + gatewayId + " nie znaleziona."));
 
+        // Tutaj twarda weryfikacja - tylko właściciel może usunąć/odpiąć bramkę całkowicie
         if (!Objects.equals(gateway.getOwner().getId(), user.getId())) {
-            throw new AccessDeniedException("Brak uprawnień do modyfikacji tej bramki.");
+            throw new AccessDeniedException("Tylko właściciel może usunąć bramkę.");
         }
+
+        // Usuwamy też wszystkie udostępnienia, żeby nie wisiały śmieci
+        permissionRepository.deleteAllByGatewayId(gatewayId);
 
         gateway.setOwner(null);
         gatewayRepository.save(gateway);
     }
+
+    // ========================================================
+    // === METODY POMOCNICZE (Uprawnienia) ===
+    // ========================================================
+
+    /**
+     * Sprawdza, czy użytkownik ma prawo do modyfikacji bramki (Owner lub FULL_ACCESS).
+     */
+    private void validateWriteAccess(Gateway gateway, User user) {
+        // 1. Czy jest właścicielem?
+        if (Objects.equals(gateway.getOwner().getId(), user.getId())) {
+            return; // OK, jest właścicielem
+        }
+
+        // 2. Jeśli nie, czy ma uprawnienie FULL_ACCESS?
+        Optional<UserGatewayPermission> permission = permissionRepository.findByGatewayIdAndUserId(gateway.getId(), user.getId());
+
+        if (permission.isPresent() && permission.get().getPermissionLevel() == PermissionLevel.FULL_ACCESS) {
+            return; // OK, ma pełny dostęp
+        }
+
+        // Brak dostępu
+        throw new AccessDeniedException("Brak uprawnień do edycji (wymagany status Właściciela lub poziom PEŁNY DOSTĘP).");
+    }
+
+    // ========================================================
+    // === STATUSY I RAPORTY (Dostępne też dla VIEW) ===
+    // ========================================================
 
     @Transactional(readOnly = true)
     public List<SensorConfigDto> getAllSensorConfigs() {
@@ -135,24 +195,15 @@ public class DataService {
         return sensorRepository.setGlobalInterval(interval);
     }
 
-    @Transactional
-    public Sensor toggleSensorReporting(Long sensorId, User user) {
-        Sensor sensor = sensorRepository.findById(sensorId)
-                .orElseThrow(() -> new EntityNotFoundException("Czujnik o ID " + sensorId + " nie znaleziony."));
-
-        if (!Objects.equals(sensor.getGateway().getOwner().getId(), user.getId())) {
-            throw new AccessDeniedException("Brak uprawnień do edycji tego czujnika.");
-        }
-
-        sensor.setReportingEnabled(!sensor.isReportingEnabled());
-        return sensorRepository.save(sensor);
-    }
+    // UWAGA: Usunięto zduplikowaną metodę toggleSensorReporting (jest już wyżej w kodzie)
 
     @Transactional(readOnly = true)
     public List<SensorStatusErrorDto> checkSensorStatuses(User user) {
         final LocalDateTime cutoff = LocalDateTime.now().minusMinutes(5);
         List<SensorStatusErrorDto> errors = new ArrayList<>();
-        List<Gateway> gateways = gatewayRepository.findWithSensorsByOwner(user);
+
+        // POPRAWKA: Pobieramy bramki własne ORAZ udostępnione
+        List<Gateway> gateways = gatewayRepository.findAllOwnedAndShared(user.getId());
 
         for (Gateway gateway : gateways) {
             LocalDateTime lastSeen = gateway.getLastSeen();
@@ -197,14 +248,12 @@ public class DataService {
             try {
                 int days = Integer.parseInt(daysStr);
                 if (days > 0) {
-                    // Zamieniamy dni na milisekundy (long), bo tak jest w bazie
                     long cutoffMillis = LocalDateTime.now()
                             .minusDays(days)
                             .atZone(ZoneId.systemDefault())
                             .toInstant()
                             .toEpochMilli();
 
-                    // Wywołujemy metodę repozytorium przyjmującą long
                     sensorReadingRepository.deleteByTimestampLessThan(cutoffMillis);
                     log.info("Usunięto rekordy starsze niż {} dni (timestamp < {}).", days, cutoffMillis);
                 }
@@ -228,7 +277,6 @@ public class DataService {
         log.info("Automatyczne czyszczenie zakończone.");
     }
 
-    // Pomocnicza metoda: Usuwa nadmiarowe rekordy, zostawiając 'limit' najnowszych
     private void trimToSize(long limit) {
         long count = sensorReadingRepository.count();
         if (count <= limit) return;
@@ -237,16 +285,12 @@ public class DataService {
         List<SensorReadingResponseDto> result = sensorReadingRepository.findLatestReadingsWithDetails(pageRequest);
 
         if (!result.isEmpty()) {
-            // DTO zwraca teraz czysty 'long', więc nie musimy nic konwertować na LocalDateTime
             long cutoffTimestamp = result.get(0).timestamp();
-
-            // Usuwamy starsze rekordy (mniejszy timestamp)
             sensorReadingRepository.deleteByTimestampLessThan(cutoffTimestamp);
             log.info("Przycięto tabelę do {} rekordów (limit).", limit);
         }
     }
 
-    // Metody dla AdminController do zarządzania ustawieniami
     public void saveRetentionSettings(Integer days, Long maxRecords) {
         saveSetting("RETENTION_DAYS", days != null ? days.toString() : "");
         saveSetting("RETENTION_MAX_RECORDS", maxRecords != null ? maxRecords.toString() : "");
@@ -262,44 +306,27 @@ public class DataService {
         return new RetentionConfigDto(d, m);
     }
 
-    private void saveSetting(String key, String value) {
-        systemSettingRepository.save(new SystemSetting(key, value));
-    }
-
-    private String getSettingValue(String key) {
-        return systemSettingRepository.findById(key).map(SystemSetting::getValue).orElse(null);
-    }
-
-    public record RetentionConfigDto(Integer retentionDays, Long maxRecords) {
-    }
-
     public RiskReportDto generateRiskReport(User user) {
         List<RiskItemDto> risks = new ArrayList<>();
 
-        // Używamy metody findWithSensorsByOwner, bo od razu pobiera sensory (wydajniej)
-        // Zastępuje to błędne findAllByUser
-        List<Gateway> userGateways = gatewayRepository.findWithSensorsByOwner(user);
+        // POPRAWKA: Pobieramy bramki własne ORAZ udostępnione
+        List<Gateway> userGateways = gatewayRepository.findAllOwnedAndShared(user.getId());
 
         for (Gateway gw : userGateways) {
             if (gw.getSensors() == null) continue;
 
             for (Sensor sensor : gw.getSensors()) {
-                // Pomiń wyłączone z raportowania
                 if (!sensor.isReportingEnabled()) continue;
 
-                // Pobierz OSTATNI odczyt dla czujnika (zwraca Optional)
                 Optional<SensorReading> lastReadingOpt = sensorReadingRepository.findTopBySensorOrderByTimestampDesc(sensor);
 
                 if (lastReadingOpt.isPresent()) {
-                    // .get() jest teraz bezpieczne, bo sprawdziliśmy isPresent()
                     SensorReading reading = lastReadingOpt.get();
                     String valStr = reading.getValue();
-
                     String type = sensor.getType() != null ? sensor.getType().toUpperCase() : "";
                     String name = sensor.getName();
 
                     try {
-                        // 1. Logika dla ŚWIATŁA (zakładamy 1.0 = ON)
                         if (type.contains("LIGHT") || type.contains("SWIATLO")) {
                             double val = Double.parseDouble(valStr);
                             if (val > 0.5) {
@@ -307,28 +334,22 @@ public class DataService {
                             }
                         }
 
-                        // 2. Logika dla OKNA/DRZWI (zakładamy 0.0 = OTWARTE, jak w kontaktronach)
                         if (type.contains("DOOR") || type.contains("WINDOW") || type.contains("KONTAKTRON")) {
-                            // Uwaga: dostosuj warunek do swoich czujników.
-                            // Często 1=Zamknięte, 0=Otwarte.
                             if ("0.0".equals(valStr) || "0".equals(valStr)) {
                                 risks.add(new RiskItemDto(name, "Otwarte", "window"));
                             }
                         }
 
-                        // 3. Logika PROGÓW (Thresholds) z bazy danych
                         double val = Double.parseDouble(valStr);
-
                         if (sensor.getAlarmThresholdHigh() != null && val > sensor.getAlarmThresholdHigh()) {
                             risks.add(new RiskItemDto(name, "Przekroczono MAX: " + val, "warning"));
                         }
-
                         if (sensor.getAlarmThresholdLow() != null && val < sensor.getAlarmThresholdLow()) {
                             risks.add(new RiskItemDto(name, "Poniżej MIN: " + val, "warning"));
                         }
 
                     } catch (NumberFormatException e) {
-                        // Ignorujemy wartości, których nie da się zamienić na liczbę (np. "ERR")
+                        // Ignoruj błędy parsowania
                     }
                 }
             }
@@ -337,5 +358,15 @@ public class DataService {
         boolean isSafe = risks.isEmpty();
         return new RiskReportDto(isSafe, risks.size(), risks);
     }
+
+    private void saveSetting(String key, String value) {
+        systemSettingRepository.save(new SystemSetting(key, value));
+    }
+
+    private String getSettingValue(String key) {
+        return systemSettingRepository.findById(key).map(SystemSetting::getValue).orElse(null);
+    }
+
+    public record RetentionConfigDto(Integer retentionDays, Long maxRecords) {}
 }
 

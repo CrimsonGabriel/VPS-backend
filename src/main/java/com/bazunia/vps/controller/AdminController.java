@@ -1,38 +1,32 @@
 package com.bazunia.vps.controller;
 
-import com.bazunia.vps.dto.UpdateDtos;
-import com.bazunia.vps.model.User;
-import com.bazunia.vps.repository.UserRepository;
-import com.bazunia.vps.model.Role;
-import com.bazunia.vps.service.UpdateService;
+import com.bazunia.vps.dto.*;
+import com.bazunia.vps.model.*;
+import com.bazunia.vps.repository.*;
+import com.bazunia.vps.service.*;
+import com.bazunia.vps.service.DataService.RetentionConfigDto;
+
+import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
-import com.bazunia.vps.service.DataService;
-import org.springframework.web.bind.annotation.PostMapping;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import com.bazunia.vps.dto.SensorUpdateRequest;
-import com.bazunia.vps.model.Sensor;
-import jakarta.validation.Valid;
-import java.util.regex.Pattern;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.stream.Stream;
 import java.util.ArrayList;
-import com.bazunia.vps.service.DataService.RetentionConfigDto;
-import com.bazunia.vps.model.SystemSetting;
-import com.bazunia.vps.repository.SystemSettingRepository;
-import com.bazunia.vps.service.SensorService;
-import com.bazunia.vps.dto.SensorCreateRequest;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @RestController
-// Zmieniamy ścieżkę bazową na /api/admin, aby kontroler obsługiwał też inne sekcje admina
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
 public class AdminController {
@@ -42,28 +36,47 @@ public class AdminController {
     private final UpdateService updateService;
     private final DataService dataService;
     private final SensorService sensorService;
-
-    // ⭐️ DODANO BRAKUJĄCE POLE (dzięki temu Lombok je wstrzyknie)
     private final SystemSettingRepository systemSettingRepository;
 
-    // DTOs dla uproszczenia (możesz je przenieść do pakietu dto)
+    // ⭐️ DODANO: Brakujące repozytorium (było używane w kodzie, ale niewstrzyknięte)
+    private final GatewayRepository gatewayRepository;
+
+    // --- DTOs ---
+
     public record AdminUserRequest(
             String email,
-            String password, // Opcjonalne: jeśli podane, hasło zostanie zmienione
+            String password,
             String name,
             boolean isAdmin,
             boolean enabled
-    ) {
-    }
+    ) {}
 
-    // DTOs dla aktualizacji
     public record UpdateStatusRequest(
-            String key,     // "App", "GW-01", "Sensor-X"
-            String status,  // "REQUIRED", "OPTIONAL", "NONE"
-            boolean shouldNotify // Czy Android ma wyświetlić powiadomienie
-    ) {
-    }
+            String key,
+            String status,
+            boolean shouldNotify
+    ) {}
 
+    // ⭐️ BEZPIECZNE DTO DLA LISTY USERÓW (To naprawia błąd "nesting depth" w UsersPage)
+    public record AdminUserDto(
+            Long id,
+            String email,
+            String name,
+            String role,
+            boolean enabled,
+            boolean twoFactorEnabled
+    ) {
+        public static AdminUserDto fromEntity(User user) {
+            return new AdminUserDto(
+                    user.getId(),
+                    user.getEmail(),
+                    user.getName(),
+                    user.getRole().name(),
+                    user.isEnabled(),
+                    user.isTwoFactorEnabled()
+            );
+        }
+    }
 
     // ----------------------------------------------------------------------
     // --- 1. ZARZĄDZANIE UŻYTKOWNIKAMI (/api/admin/users/...) ---
@@ -71,27 +84,29 @@ public class AdminController {
 
     // --- READ (Wszyscy Użytkownicy) ---
     @GetMapping("/users")
-    public ResponseEntity<List<User>> getAllUsers() {
-        return ResponseEntity.ok(userRepository.findAll());
+    public ResponseEntity<List<AdminUserDto>> getAllUsers() {
+        // ⭐️ ZMIANA: Zwracamy DTO zamiast encji, żeby przerwać pętlę JSON
+        List<AdminUserDto> users = userRepository.findAll().stream()
+                .map(AdminUserDto::fromEntity)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(users);
     }
 
     // --- READ (Pobierz po ID) ---
     @GetMapping("/users/{id}")
-    public ResponseEntity<User> getUserById(@PathVariable Long id) {
-        Optional<User> user = userRepository.findById(id);
-        return user.map(ResponseEntity::ok)
+    public ResponseEntity<AdminUserDto> getUserById(@PathVariable Long id) {
+        return userRepository.findById(id)
+                .map(AdminUserDto::fromEntity)
+                .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     // --- CREATE (Dodaj Użytkownika) ---
     @PostMapping("/users")
-    public ResponseEntity<User> createUser(@RequestBody AdminUserRequest request) {
-        // Walidacja czy użytkownik już istnieje
+    public ResponseEntity<AdminUserDto> createUser(@RequestBody AdminUserRequest request) {
         if (userRepository.findByEmail(request.email()).isPresent()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         }
-
-        // Hasło jest wymagane przy tworzeniu
         if (request.password() == null || request.password().isEmpty()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
@@ -100,15 +115,17 @@ public class AdminController {
         newUser.setEmail(request.email());
         newUser.setName(request.name());
         newUser.setRole(request.isAdmin() ? Role.ADMIN : Role.USER);
-        newUser.setPassword(passwordEncoder.encode(request.password())); // Haszowanie hasła
-        newUser.setTwoFactorEnabled(false); // Domyślnie 2FA wyłączone
+        newUser.setPassword(passwordEncoder.encode(request.password()));
+        newUser.setTwoFactorEnabled(false);
         newUser.setEnabled(request.enabled());
-        return ResponseEntity.status(HttpStatus.CREATED).body(userRepository.save(newUser));
+
+        User saved = userRepository.save(newUser);
+        return ResponseEntity.status(HttpStatus.CREATED).body(AdminUserDto.fromEntity(saved));
     }
 
     // --- UPDATE (Edytuj Użytkownika) ---
     @PutMapping("/users/{id}")
-    public ResponseEntity<User> updateUser(@PathVariable Long id, @RequestBody AdminUserRequest request) {
+    public ResponseEntity<AdminUserDto> updateUser(@PathVariable Long id, @RequestBody AdminUserRequest request) {
         return userRepository.findById(id)
                 .map(existingUser -> {
                     existingUser.setEmail(request.email());
@@ -116,12 +133,12 @@ public class AdminController {
                     existingUser.setRole(request.isAdmin() ? Role.ADMIN : Role.USER);
                     existingUser.setEnabled(request.enabled());
 
-                    // Jeśli w formularzu podano nowe hasło, hashujemy i zmieniamy
                     if (request.password() != null && !request.password().isEmpty()) {
                         existingUser.setPassword(passwordEncoder.encode(request.password()));
                     }
 
-                    return ResponseEntity.ok(userRepository.save(existingUser));
+                    User saved = userRepository.save(existingUser);
+                    return ResponseEntity.ok(AdminUserDto.fromEntity(saved));
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -131,21 +148,20 @@ public class AdminController {
     public ResponseEntity<Void> deleteUser(@PathVariable Long id) {
         Optional<User> userToDelete = userRepository.findById(id);
 
-        // Zabezpieczenie: Nie pozwól usunąć głównego admina (opcjonalnie)
         if (userToDelete.isPresent() && userToDelete.get().getEmail().equals("admin")) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
         if (userRepository.existsById(id)) {
             userRepository.deleteById(id);
-            return ResponseEntity.noContent().build(); // 204 No Content - sukces
+            return ResponseEntity.noContent().build();
         }
         return ResponseEntity.notFound().build();
     }
 
 
     // ----------------------------------------------------------------------
-    // --- 2. ZARZĄDZANIE AKTUALIZACJAMI (NOWA IMPLEMENTACJA) ---
+    // --- 2. ZARZĄDZANIE AKTUALIZACJAMI ---
     // ----------------------------------------------------------------------
 
     @PostMapping("/updates")
@@ -172,51 +188,58 @@ public class AdminController {
         }
     }
 
-    // Helper dla Frontendu - pobiera bramki użytkownika do dropdowna
+    // Helper dla Frontendu - pobiera bramki użytkownika (UpdatesPage.jsx)
     @GetMapping("/users/{userId}/gateways")
-    public ResponseEntity<?> getGatewaysForUser(@PathVariable Long userId) {
-        return userRepository.findById(userId)
-                .map(user -> ResponseEntity.ok(dataService.getGatewaysForUser(user)))
-                .orElseGet(() -> ResponseEntity.notFound().build());
+    public ResponseEntity<List<GatewayDto>> getUserGateways(@PathVariable Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+
+        // ⭐️ Używamy GatewayDto.fromEntity, które jest bezpieczne (nie ma pętli)
+        List<GatewayDto> dtos = gatewayRepository.findWithSensorsByOwner(user).stream()
+                .map(GatewayDto::fromEntity)
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(dtos);
+    }
+
+    // ⭐️ DODANO: Helper dla Frontendu - pobiera sensory bramki (UpdatesPage.jsx tego potrzebuje!)
+    @GetMapping("/gateways/{gatewayId}/sensors")
+    public ResponseEntity<List<SensorDto>> getGatewaySensors(@PathVariable Long gatewayId) {
+        Gateway gateway = gatewayRepository.findById(gatewayId)
+                .orElseThrow(() -> new EntityNotFoundException("Gateway not found"));
+
+        List<SensorDto> dtos = gateway.getSensors().stream()
+                .map(SensorDto::fromEntity)
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(dtos);
     }
 
     // ----------------------------------------------------------------------
     // --- 3. ZARZĄDZANIE SENSORAMI (/api/admin/sensors/...) ---
     // ----------------------------------------------------------------------
 
-    /**
-     * Tworzy nowy sensor z ręcznie podanym ID.
-     * Sprawdza, czy sensor o takim ID już istnieje.
-     */
     @PostMapping("/sensors")
     public ResponseEntity<?> createSensor(@Valid @RequestBody SensorCreateRequest request) {
         try {
-            // Cała logika jest teraz w serwisie
             Sensor savedSensor = sensorService.createSensor(request);
-            return ResponseEntity.status(HttpStatus.CREATED).body(savedSensor);
-
+            // Zwracamy DTO
+            return ResponseEntity.status(HttpStatus.CREATED).body(SensorDto.fromEntity(savedSensor));
         } catch (RuntimeException e) {
-            // Serwis rzuci wyjątek (np. "Sensor już istnieje" lub "Bramka nie istnieje")
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }
     }
 
-    /**
-     * Aktualizuje wybrane pola sensora o podanym ID.
-     */
     @PatchMapping("/sensors/{id}")
     public ResponseEntity<?> updateSensor(
             @PathVariable Long id,
             @Valid @RequestBody SensorUpdateRequest request) {
-
         try {
-            // Wywołaj logikę z serwisu
             Sensor updatedSensor = sensorService.updateSensor(id, request);
-            return ResponseEntity.ok(updatedSensor); // Zwróć 200 OK z zaktualizowanym obiektem
-
+            // Zwracamy DTO
+            return ResponseEntity.ok(SensorDto.fromEntity(updatedSensor));
         } catch (RuntimeException e) {
-            // Przechwyć błędy (np. "Sensor nie istnieje", "Bramka nie istnieje")
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -227,52 +250,36 @@ public class AdminController {
     // ----------------------------------------------------------------------
 
     @GetMapping("/logs")
-    public ResponseEntity<List<String>> getAppLogs(
-            @RequestParam(defaultValue = "out") String type // Domyślnie PM2 Output
-    ) {
+    public ResponseEntity<List<String>> getAppLogs(@RequestParam(defaultValue = "out") String type) {
         String logFilePath;
-
-        // Wybór pliku na podstawie parametru ?type=
         switch (type) {
             case "error":
-                // Ścieżka z Twojego screena (Error Log)
                 logFilePath = "/home/ubuntu/.pm2/logs/bazunia-app-spring-error.log";
                 break;
             case "server":
-                // Plik wewnętrzny Springa (w katalogu roboczym)
                 logFilePath = "server.log";
                 break;
             case "out":
             default:
-                // Ścieżka z Twojego screena (Out Log)
                 logFilePath = "/home/ubuntu/.pm2/logs/bazunia-app-spring-out.log";
                 break;
         }
 
-        int linesToRead = 300; // Czytamy ostatnie 300 linii
-
+        int linesToRead = 300;
         try (Stream<String> lines = Files.lines(Paths.get(logFilePath))) {
             List<String> allLines = lines.toList();
-            List<String> lastLines = new ArrayList<>();
-
             int start = Math.max(0, allLines.size() - linesToRead);
-            lastLines = allLines.subList(start, allLines.size());
+            List<String> lastLines = allLines.subList(start, allLines.size());
 
-            // Usuwanie kodów kolorów ANSI (PM2 je dodaje, a w przeglądarce wyglądają jak śmieci [32m...)
             Pattern ansiPattern = Pattern.compile("\\x1B\\[[0-9;]*[a-zA-Z]");
             List<String> cleanLogs = lastLines.stream()
                     .map(line -> ansiPattern.matcher(line).replaceAll(""))
                     .toList();
 
             return ResponseEntity.ok(cleanLogs);
-
         } catch (IOException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(List.of(
-                            "Błąd odczytu pliku logów (" + type + "): " + e.getMessage(),
-                            "Sprawdzana ścieżka: " + logFilePath,
-                            "Upewnij się, że plik istnieje na serwerze VPS."
-                    ));
+                    .body(List.of("Błąd odczytu: " + e.getMessage()));
         }
     }
 
@@ -291,7 +298,6 @@ public class AdminController {
         return ResponseEntity.ok().build();
     }
 
-    // Opcjonalnie: Przycisk "Wyczyść teraz wg zasad" (dla niecierpliwych)
     @PostMapping("/retention/run")
     public ResponseEntity<?> runCleanupNow() {
         dataService.performAutoCleanup();
@@ -300,8 +306,6 @@ public class AdminController {
 
     @GetMapping("/retention/request")
     public ResponseEntity<Map<String, String>> getPendingRetentionRequest() {
-        // Pobieramy wartości z tabeli ustawień, gdzie zapisał je Android
-        // Używamy instancji systemSettingRepository (mała litera)
         String status = systemSettingRepository.findById("RETENTION_REQ_STATUS").map(SystemSetting::getValue).orElse("NONE");
         String reqDays = systemSettingRepository.findById("RETENTION_REQ_DAYS").map(SystemSetting::getValue).orElse(null);
         String reqSize = systemSettingRepository.findById("RETENTION_REQ_SIZE").map(SystemSetting::getValue).orElse(null);
@@ -313,34 +317,25 @@ public class AdminController {
         ));
     }
 
-    // ⭐️ 2. Podejmij decyzję (ACCEPT / REJECT)
     @PostMapping("/retention/decision")
     @Transactional
     public ResponseEntity<?> handleRetentionDecision(@RequestBody Map<String, String> body) {
-        String decision = body.get("decision"); // "ACCEPT" lub "REJECT"
+        String decision = body.get("decision");
 
-        // Używamy instancji systemSettingRepository (mała litera) zamiast nazwy klasy
         if ("ACCEPT".equals(decision)) {
-            // 1. Pobierz wnioskowane wartości
             String reqDays = systemSettingRepository.findById("RETENTION_REQ_DAYS").map(SystemSetting::getValue).orElse(null);
             String reqSize = systemSettingRepository.findById("RETENTION_REQ_SIZE").map(SystemSetting::getValue).orElse(null);
 
-            // 2. Nadpisz GŁÓWNE ustawienia (jeśli wniosek zawierał wartość)
             if (reqDays != null && !reqDays.isEmpty()) {
-                dataService.saveRetentionSettings(Integer.parseInt(reqDays), null); // Dni
+                dataService.saveRetentionSettings(Integer.parseInt(reqDays), null);
             }
             if (reqSize != null && !reqSize.isEmpty()) {
                 systemSettingRepository.save(new SystemSetting("RETENTION_MAX_RECORDS", reqSize));
             }
-            // Dla pewności zapiszmy oba:
-            if (reqDays != null) systemSettingRepository.save(new SystemSetting("RETENTION_DAYS", reqDays));
-            if (reqSize != null) systemSettingRepository.save(new SystemSetting("RETENTION_MAX_RECORDS", reqSize));
 
-            // 3. Zmień status na ACCEPTED (Android to wykryje)
             systemSettingRepository.save(new SystemSetting("RETENTION_REQ_STATUS", "ACCEPTED"));
 
         } else if ("REJECT".equals(decision)) {
-            // Po prostu zmień status na REJECTED
             systemSettingRepository.save(new SystemSetting("RETENTION_REQ_STATUS", "REJECTED"));
         } else {
             return ResponseEntity.badRequest().body("Nieznana decyzja. Użyj ACCEPT lub REJECT.");
