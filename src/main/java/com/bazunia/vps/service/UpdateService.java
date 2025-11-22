@@ -18,7 +18,7 @@ public class UpdateService {
     private final UpdateAssignmentRepository assignmentRepository;
     private final GatewayRepository gatewayRepository;
     private final SensorRepository sensorRepository;
-    private final UserRepository userRepository;
+
 
     /**
      * Tworzy aktualizację i przypisuje ją do wybranych celów.
@@ -46,14 +46,12 @@ public class UpdateService {
                 // Pojedyncza bramka
                 Gateway g = gatewayRepository.findById(request.getTargetGatewayId())
                         .orElseThrow(() -> new RuntimeException("Gateway not found"));
-                // owner_user_id z promptu (zakładam relację w Gateway lub pole ownerUserId)
+
                 // Przyjmuję, że Gateway ma metodę getOwnerUserId() lub User w relacji
                 Long ownerId = g.getOwner() != null ? g.getOwner().getId() : null;
                 createAssignment(update, g.getId(), ownerId);
-            } else {
-                // WSZYSTKIE bramki usera (opcjonalna logika, jeśli admin nie wybierze konkretnej)
-                // Tutaj zakładamy z promptu, że Admin wybiera konkretną.
             }
+            // Usunięto pusty blok else (logika dla WSZYSTKICH bramek nie była zaimplementowana)
 
         } else if (request.getTargetType() == SystemUpdate.UpdateTargetType.SENSOR) {
             if (request.getTargetSensorId() != null) {
@@ -130,8 +128,6 @@ public class UpdateService {
      * Dla API Klienta (Android): Pobiera oczekujące aktualizacje dla usera.
      */
     public List<UpdateDtos.ClientUpdateResponse> getPendingUpdatesForUser(Long userId) {
-        // Pobieramy wszystko co nie jest COMPLETED (czyli PENDING i DEFERRED)
-        // Logika Androida zdecyduje czy DEFERRED można wyświetlić ponownie
         List<UpdateAssignment> assignments = assignmentRepository.findByRecipientUserId(userId);
 
         return assignments.stream()
@@ -159,14 +155,7 @@ public class UpdateService {
 
         if (newStatus == UpdateAssignment.AssignmentStatus.DEFERRED) {
             assignment.setDeferCount(assignment.getDeferCount() + 1);
-
-            // Walidacja REQUIRED po stronie serwera (backup dla klienta)
-            if (assignment.getSystemUpdate().getUrgency() == SystemUpdate.UpdateUrgency.REQUIRED) {
-                if (assignment.getDeferCount() > 1) {
-                    // Jeśli próbuje odłożyć drugi raz wymagane -> wymuś status (opcjonalnie)
-                    // Lub rzuć wyjątek, ale lepiej logować.
-                }
-            }
+            // Usunięto pusty blok if sprawdzający deferCount > 1 (tylko komentarze, brak logiki)
         }
 
         assignment.setStatus(newStatus);

@@ -51,11 +51,11 @@ public class AdminController {
             boolean enabled
     ) {}
 
-    public record UpdateStatusRequest(
-            String key,
-            String status,
-            boolean shouldNotify
-    ) {}
+//    public record UpdateStatusRequest(
+//            String key,
+//            String status,
+//            boolean shouldNotify
+//    ) {}
 
     // ⭐️ BEZPIECZNE DTO DLA LISTY USERÓW (To naprawia błąd "nesting depth" w UsersPage)
     public record AdminUserDto(
@@ -251,19 +251,11 @@ public class AdminController {
 
     @GetMapping("/logs")
     public ResponseEntity<List<String>> getAppLogs(@RequestParam(defaultValue = "out") String type) {
-        String logFilePath;
-        switch (type) {
-            case "error":
-                logFilePath = "/home/ubuntu/.pm2/logs/bazunia-app-spring-error.log";
-                break;
-            case "server":
-                logFilePath = "server.log";
-                break;
-            case "out":
-            default:
-                logFilePath = "/home/ubuntu/.pm2/logs/bazunia-app-spring-out.log";
-                break;
-        }
+        String logFilePath = switch (type) {
+            case "error" -> "/home/ubuntu/.pm2/logs/bazunia-app-spring-error.log";
+            case "server" -> "server.log";
+            default -> "/home/ubuntu/.pm2/logs/bazunia-app-spring-out.log";
+        };
 
         int linesToRead = 300;
         try (Stream<String> lines = Files.lines(Paths.get(logFilePath))) {

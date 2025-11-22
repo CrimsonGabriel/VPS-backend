@@ -2,7 +2,6 @@ package com.bazunia.vps.controller;
 
 import com.bazunia.vps.model.FileRecord;
 import com.bazunia.vps.service.FileStorageService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -13,12 +12,15 @@ import java.util.List;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 @RestController
-// ⭐️ DODANA KLUCZOWA LINIA ⭐️
+
 @RequestMapping("/api/files")
 public class FileController {
 
-    @Autowired
-    private FileStorageService fileStorageService;
+    private final FileStorageService fileStorageService;
+
+    public FileController(FileStorageService fileStorageService) {
+        this.fileStorageService = fileStorageService;
+    }
 
     /**
      * Endpoint do wysyłania pliku: teraz jest pod ścieżką /api/files/upload

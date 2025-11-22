@@ -10,9 +10,11 @@ public record SensorConfigDto(
         Integer intervalSeconds,
         boolean reportingEnabled
 ) {
+
     /**
      * Metoda fabryczna do łatwej konwersji Encji Sensor na to DTO.
      */
+
     public static SensorConfigDto fromEntity(Sensor sensor) {
         return new SensorConfigDto(
                 sensor.getId(),

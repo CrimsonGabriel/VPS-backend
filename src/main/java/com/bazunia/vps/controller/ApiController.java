@@ -107,7 +107,7 @@ public class ApiController {
 
     @GetMapping("/api/sensors/status")
     public ResponseEntity<List<SensorStatusErrorDto>> getSensorStatuses(Authentication authentication) {
-        User user = (User) authentication.getPrincipal();
+        User user = getAuthenticatedUser(authentication);
         List<SensorStatusErrorDto> errors = dataService.checkSensorStatuses(user);
         return ResponseEntity.ok(errors);
     }
@@ -234,7 +234,10 @@ public class ApiController {
             @RequestBody Map<String, String> request,
             Authentication authentication) {
 
-        // Możemy logować, kto poprosił (User user = ...), ale tutaj zapiszemy po prostu wniosek
+        // POPRAWKA: Używamy authentication, żeby warning zniknął i żeby wiedzieć kto pyta
+        User user = getAuthenticatedUser(authentication);
+        System.out.println("DEBUG: Wniosek o retencję od: " + user.getEmail());
+
         String days = request.get("days");
         String size = request.get("size");
 
@@ -258,6 +261,10 @@ public class ApiController {
      */
     @GetMapping("/api/retention/status")
     public ResponseEntity<?> getRetentionRequestStatus(Authentication authentication) {
+
+        String requestor = authentication.getName();
+        // POPRAWKA: Używamy zmiennej w logu, żeby warning zniknął
+        System.out.println("DEBUG: Użytkownik " + requestor + " sprawdza status retencji.");
 
         // Pobierz status wniosku
         String status = systemSettingRepository.findById("RETENTION_REQ_STATUS")
@@ -306,7 +313,7 @@ public class ApiController {
 
     @GetMapping("/api/my-updates")
     public ResponseEntity<List<UpdateDtos.ClientUpdateResponse>> getMyUpdates(Authentication authentication) {
-        User user = (User) authentication.getPrincipal();
+        User user = getAuthenticatedUser(authentication);
         return ResponseEntity.ok(updateService.getPendingUpdatesForUser(user.getId()));
     }
 
@@ -324,7 +331,8 @@ public class ApiController {
     // ⭐️⭐️⭐️ NOWY ENDPOINT: RAPORT BEZPIECZEŃSTWA ⭐️⭐️⭐️
     @GetMapping("/api/status/risk-report")
     public ResponseEntity<RiskReportDto> getRiskReport(Authentication authentication) {
-        User user = (User) authentication.getPrincipal();
+        // POPRAWKA: Używamy metody pomocniczej
+        User user = getAuthenticatedUser(authentication);
         RiskReportDto report = dataService.generateRiskReport(user);
         return ResponseEntity.ok(report);
     }
@@ -555,21 +563,20 @@ public class ApiController {
 
     @GetMapping("/api/gateways")
     public ResponseEntity<List<GatewayDto>> getGateways(Authentication authentication) {
-        User user = (User) authentication.getPrincipal();
+        User user = getAuthenticatedUser(authentication);
         List<GatewayDto> gateways = dataService.getGatewaysForUser(user);
         return ResponseEntity.ok(gateways);
     }
 
     @PutMapping("/api/gateways/{id}")
-    public ResponseEntity<GatewayDto> updateGateway( // ZMIANA: Zwracamy GatewayDto
-                                                     @PathVariable Long id,
-                                                     @RequestBody GatewayUpdateRequest request,
-                                                     Authentication authentication) {
+    public ResponseEntity<GatewayDto> updateGateway(
+            @PathVariable Long id,
+            @RequestBody GatewayUpdateRequest request,
+            Authentication authentication) {
 
-        User user = (User) authentication.getPrincipal();
+        User user = getAuthenticatedUser(authentication);
         try {
             Gateway updatedGateway = dataService.updateGateway(id, request, user);
-            // ZMIANA: Mapujemy na DTO przed wysłaniem
             return ResponseEntity.ok(GatewayDto.fromEntity(updatedGateway));
         } catch (EntityNotFoundException e) {
             return ResponseEntity.notFound().build();
@@ -579,15 +586,14 @@ public class ApiController {
     }
 
     @PutMapping("/api/sensors/{id}")
-    public ResponseEntity<SensorDto> updateSensor( // ZMIANA: Zwracamy SensorDto
-                                                   @PathVariable Long id,
-                                                   @RequestBody SensorUpdateRequest request,
-                                                   Authentication authentication) {
+    public ResponseEntity<SensorDto> updateSensor(
+            @PathVariable Long id,
+            @RequestBody SensorUpdateRequest request,
+            Authentication authentication) {
 
-        User user = (User) authentication.getPrincipal();
+        User user = getAuthenticatedUser(authentication);
         try {
             Sensor updatedSensor = dataService.updateSensor(id, request, user);
-            // ZMIANA: Mapujemy na DTO
             return ResponseEntity.ok(SensorDto.fromEntity(updatedSensor));
         } catch (EntityNotFoundException e) {
             return ResponseEntity.notFound().build();
@@ -597,14 +603,13 @@ public class ApiController {
     }
 
     @PostMapping("/api/sensors/{id}/toggle-reporting")
-    public ResponseEntity<SensorDto> toggleSensorReporting( // ZMIANA: Zwracamy SensorDto
-                                                            @PathVariable Long id,
-                                                            Authentication authentication) {
+    public ResponseEntity<SensorDto> toggleSensorReporting(
+            @PathVariable Long id,
+            Authentication authentication) {
 
-        User user = (User) authentication.getPrincipal();
+        User user = getAuthenticatedUser(authentication);
         try {
             Sensor updatedSensor = dataService.toggleSensorReporting(id, user);
-            // ZMIANA: Mapujemy na DTO
             return ResponseEntity.ok(SensorDto.fromEntity(updatedSensor));
         } catch (EntityNotFoundException e) {
             return ResponseEntity.notFound().build();
@@ -618,12 +623,11 @@ public class ApiController {
             @PathVariable Long id,
             Authentication authentication) {
 
+        // Tu już było dobrze (getAuthenticatedUser), ale wklejam dla spójności bloku
         User user = getAuthenticatedUser(authentication);
         try {
-            // <<< ZMIANA WYWOŁANIA: z deleteGateway na disassociateGateway >>>
             dataService.disassociateGateway(id, user);
-
-            return ResponseEntity.noContent().build(); // Sukces, 204 No Content
+            return ResponseEntity.noContent().build();
         } catch (EntityNotFoundException e) {
             return ResponseEntity.notFound().build();
         } catch (AccessDeniedException e) {

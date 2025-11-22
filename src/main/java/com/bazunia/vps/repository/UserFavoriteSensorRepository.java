@@ -11,6 +11,5 @@ public interface UserFavoriteSensorRepository extends JpaRepository<UserFavorite
 
     @Query("SELECT ufs FROM UserFavoriteSensor ufs JOIN FETCH ufs.sensor s JOIN FETCH s.gateway WHERE ufs.user = :user")
     List<UserFavoriteSensor> findByUserWithSensorAndGateway(User user);
-
     void deleteByUserAndSensorId(User user, Long sensorId);
 }

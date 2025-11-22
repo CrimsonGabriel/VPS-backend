@@ -6,7 +6,6 @@ import com.bazunia.vps.repository.UserRepository;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
-
 import java.util.Optional;
 import java.util.logging.Logger;
 
@@ -23,7 +22,7 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     @Override
-    public void run(String... args) throws Exception {
+    public void run(String... args) {
         Optional<User> adminOptional = userRepository.findByEmail("admin");
 
         if (adminOptional.isEmpty()) {
@@ -35,8 +34,7 @@ public class DataInitializer implements CommandLineRunner {
             adminUser.setName("Domyślny Administrator");
             adminUser.setRole(Role.ADMIN);
 
-            // ⭐️⭐️ NOWA LINIA ⭐️⭐️
-            adminUser.setEnabled(true); // Ustawia admina jako aktywnego od razu
+            adminUser.setEnabled(true);
 
             userRepository.save(adminUser);
             logger.info(">>> Użytkownik admin został stworzony pomyślnie!");
@@ -44,15 +42,12 @@ public class DataInitializer implements CommandLineRunner {
             User existingAdmin = adminOptional.get();
             boolean needsUpdate = false;
 
-            // Naprawa roli
             if (existingAdmin.getRole() == null || existingAdmin.getRole() != Role.ADMIN) {
                 existingAdmin.setRole(Role.ADMIN);
                 needsUpdate = true;
                 logger.info(">>> Użytkownik admin istniał, Rola została naprawiona na ADMIN.");
             }
 
-            // ⭐️⭐️ NOWA LOGIKA NAPRAWY ⭐️⭐️
-            // Naprawa istniejących adminów, którzy mogliby być 'disabled' (chociaż DEFAULT true ich uratował)
             if (!existingAdmin.isEnabled()) {
                 existingAdmin.setEnabled(true);
                 needsUpdate = true;

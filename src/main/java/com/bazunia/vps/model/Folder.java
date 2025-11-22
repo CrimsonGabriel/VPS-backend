@@ -19,7 +19,7 @@ public class Folder {
     @Column(nullable = false)
     private String name;
 
-    @Column(nullable = true)
+    @Column
     private String color; // Np. format HEX: "#FF5733"
 
     @ManyToOne(fetch = FetchType.LAZY)

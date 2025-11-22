@@ -60,33 +60,36 @@ public class EmailService {
         }
     }
 
-    /**
-     * Wysyła e-mail powitalny po aktywacji.
-     * @param to Adres e-mail odbiorcy.
-     */
-    @Async
-    public void sendWelcomeEmail(String to) {
-        logger.info("Próba wysłania e-maila powitalnego do: " + to);
-        try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(fromEmail);
-            message.setTo(to);
-            message.setSubject("Witaj w Bazunia App!");
-
-            String text = "Witaj,\n\n"
-                    + "Twoje konto zostało pomyślnie aktywowane!\n"
-                    + "Możesz teraz zalogować się do aplikacji.\n\n"
-                    + "Miłego korzystania!\n"
-                    + "Zespół Bazunia";
-
-            message.setText(text);
-            mailSender.send(message);
-
-            logger.info("E-mail powitalny pomyślnie wysłany do: " + to);
-        } catch (MailException e) {
-            logger.severe("BŁĄD wysyłania e-maila powitalnego do " + to + ": " + e.getMessage());
-        }
-    }
+//    /**
+//     * Wysyła e-mail powitalny po aktywacji.
+//     * @param to Adres e-mail odbiorcy.
+//     */
+//    @Async
+//    public void sendWelcomeEmail(String to) {
+//        logger.info("Próba wysłania e-maila powitalnego do: " + to);
+//        try {
+//            SimpleMailMessage message = new SimpleMailMessage();
+//            message.setFrom(fromEmail);
+//            message.setTo(to);
+//            message.setSubject("Witaj w Bazunia App!");
+//
+//            String text = """
+//                    Witaj,
+//
+//                    Twoje konto zostało pomyślnie aktywowane!
+//                    Możesz teraz zalogować się do aplikacji.
+//
+//                    Miłego korzystania!
+//                    Zespół Bazunia""";
+//
+//            message.setText(text);
+//            mailSender.send(message);
+//
+//            logger.info("E-mail powitalny pomyślnie wysłany do: " + to);
+//        } catch (MailException e) {
+//            logger.severe("BŁĄD wysyłania e-maila powitalnego do " + to + ": " + e.getMessage());
+//        }
+//    }
     /**
      * ⭐️⭐️ NOWA METODA ⭐️⭐️
      * Wysyła e-mail z linkiem do resetowania hasła.

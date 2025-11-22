@@ -28,10 +28,12 @@ public class FileStorageService {
     @Autowired
     public FileStorageService(@Value("${file.upload-dir}") String uploadDir, FileRecordRepository fileRecordRepository) {
         this.fileRecordRepository = fileRecordRepository;
-        this.fileStorageLocation = Paths.get(uploadDir).toAbsolutePath().normalize();
+        Path path = Paths.get(uploadDir).toAbsolutePath().normalize();
 
         try {
-            Files.createDirectories(this.fileStorageLocation);
+            // POPRAWKA: Przypisujemy wynik metody createDirectories do pola klasy.
+            // Wcześniej wynik był ignorowany, co powodowało ostrzeżenie "Return value... never used".
+            this.fileStorageLocation = Files.createDirectories(path);
         } catch (Exception ex) {
             throw new RuntimeException("Nie można stworzyć folderu do zapisu plików.", ex);
         }
@@ -41,11 +43,18 @@ public class FileStorageService {
      * Zapisuje plik na dysku i w bazie danych
      */
     public FileRecord storeFile(MultipartFile file) {
+        // POPRAWKA: Obsługa możliwego nulla z getOriginalFilename()
+        String rawFileName = file.getOriginalFilename();
+        if (rawFileName == null) {
+            throw new RuntimeException("Nazwa pliku jest nieprawidłowa (null).");
+        }
+
         // 1. Bezpieczna nazwa pliku
-        String originalFileName = StringUtils.cleanPath(file.getOriginalFilename());
+        String originalFileName = StringUtils.cleanPath(rawFileName);
 
         // 2. Unikalna nazwa, aby uniknąć konfliktów
-        String uniqueFileName = UUID.randomUUID().toString() + "_" + originalFileName;
+        // POPRAWKA: Usunięto zbędne .toString() - Java zrobi to automatycznie przy konkatenacji
+        String uniqueFileName = UUID.randomUUID() + "_" + originalFileName;
 
         // 3. Ścieżka zapisu na dysku
         Path targetLocation = this.fileStorageLocation.resolve(uniqueFileName);
@@ -97,6 +106,7 @@ public class FileStorageService {
     public List<FileRecord> getAllFiles() {
         return fileRecordRepository.findAll();
     }
+
     public void deleteFile(Long fileId) {
         FileRecord fileRecord = fileRecordRepository.findById(fileId)
                 .orElseThrow(() -> new RuntimeException("Plik nie znaleziony " + fileId));

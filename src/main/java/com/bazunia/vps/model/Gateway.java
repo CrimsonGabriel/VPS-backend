@@ -26,7 +26,7 @@ public class Gateway {
 
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "owner_user_id", nullable = true)
+    @JoinColumn(name = "owner_user_id")
     private User owner;
 
     @Column(nullable = false, length = 100)
@@ -37,7 +37,7 @@ public class Gateway {
     private String version;
     @Column(length = 100)
     private String folder;
-    @Column(length = 255)
+    @Column
     private String description;
     private LocalDateTime lastSeen;
     @CreationTimestamp

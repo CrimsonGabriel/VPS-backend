@@ -34,6 +34,5 @@ public class ShareDto {
     public static class UserPickDto {
         private Long id;
         private String email;
-        // Możesz dodać np. imię, jeśli masz w bazie
     }
 }

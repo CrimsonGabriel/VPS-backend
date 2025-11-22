@@ -11,12 +11,6 @@ public interface GatewayRepository extends JpaRepository<Gateway, Long> {
     @Query("SELECT g FROM Gateway g LEFT JOIN FETCH g.sensors WHERE g.owner = :user")
     List<Gateway> findWithSensorsByOwner(User user);
 
-    // --- NOWA METODA "JEDNYM STRZAŁEM" ---
-    // Pobiera bramki gdzie:
-    // 1. Jesteś właścicielem (g.owner.id = :userId)
-    // LUB
-    // 2. Masz uprawnienie w tabeli permissions (p.user.id = :userId)
-    // DISTINCT zapobiega duplikatom
     @Query("SELECT DISTINCT g FROM Gateway g " +
             "LEFT JOIN FETCH g.sensors " + // Od razu pobieramy sensory (optymalizacja)
             "LEFT JOIN g.permissions p " +

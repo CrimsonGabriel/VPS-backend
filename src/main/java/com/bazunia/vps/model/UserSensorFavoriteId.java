@@ -7,13 +7,13 @@ import java.util.Objects;
 
 @Embeddable
 public class UserSensorFavoriteId implements Serializable {
+
     @Column(name = "user_id")
     private Long userId;
 
     @Column(name = "sensor_id")
     private Long sensorId;
 
-    // Konstruktory, equals() i hashCode() są niezbędne
     public UserSensorFavoriteId() {}
     public UserSensorFavoriteId(Long userId, Long sensorId) {
         this.userId = userId;

@@ -48,7 +48,7 @@ public class StatusService {
         return new HashSet<>(uniqueAndroidIPs);
     }
 
-    public Set<String> getUniqueRpiIPs() {
-        return new HashSet<>(uniqueRpiIPs); // Zbiór RPi, może być użyty w przyszłości
-    }
+//    public Set<String> getUniqueRpiIPs() {
+//        return new HashSet<>(uniqueRpiIPs); // Zbiór RPi, może być użyty w przyszłości
+//    }
 }

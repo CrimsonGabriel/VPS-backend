@@ -15,7 +15,6 @@ public record SensorDto(
         String keyword,
         boolean reportingEnabled
 ) {
-    // Konstruktor mapujący Encję na DTO
     public static SensorDto fromEntity(Sensor entity) {
         return new SensorDto(
                 entity.getId(),

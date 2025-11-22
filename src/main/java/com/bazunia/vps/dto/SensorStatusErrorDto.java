@@ -1,9 +1,9 @@
 package com.bazunia.vps.dto;
 
 public record SensorStatusErrorDto(
-        Long entityId, // ID bramki lub czujnika
-        String entityType, // "GATEWAY" lub "SENSOR"
-        String errorType, // "OFFLINE" lub "NO_DATA"
+        Long entityId,
+        String entityType,
+        String errorType,
         String entityName,
-        String readableMessage // "Bramka 'Kuchnia' jest offline od 30 minut."
+        String readableMessage
 ) {}

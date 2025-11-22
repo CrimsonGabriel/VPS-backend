@@ -1,6 +1,5 @@
 package com.bazunia.vps.repository;
 
-import com.bazunia.vps.model.SystemUpdate;
 import com.bazunia.vps.model.UpdateAssignment;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;

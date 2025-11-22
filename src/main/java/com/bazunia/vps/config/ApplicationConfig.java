@@ -17,7 +17,6 @@ import org.springframework.boot.web.servlet.MultipartConfigFactory;
 import org.springframework.util.unit.DataSize;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.web.filter.ForwardedHeaderFilter;
-// --- ⭐️ DODAJ IMPORTY DLA 2FA ⭐️ ---
 import dev.samstevens.totp.code.CodeVerifier;
 import dev.samstevens.totp.code.DefaultCodeGenerator;
 import dev.samstevens.totp.code.DefaultCodeVerifier;
@@ -54,24 +53,21 @@ public class ApplicationConfig {
 
     @Bean
     public AuthenticationProvider authenticationProvider() {
-        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
-        authProvider.setUserDetailsService(userDetailsService());
-        authProvider.setPasswordEncoder(passwordEncoder()); // Używa BCryptPasswordEncoder
+        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider(userDetailsService());
+        authProvider.setPasswordEncoder(passwordEncoder());
         return authProvider;
     }
 
-    // --- ⭐️ DODANY BEAN DLA OBSŁUGI NAGŁÓWKÓW PROXY (ROZWIĄZANIE PROBLEMU Z 127.0.0.1) ⭐️ ---
+    // --- BEAN DLA OBSŁUGI NAGŁÓWKÓW PROXY ---
     @Bean
     public FilterRegistrationBean<ForwardedHeaderFilter> forwardedHeaderFilter() {
-        // Ten filter nakazuje Springowi, aby odczytywał adres IP klienta
-        // z nagłówków X-Forwarded-For i X-Real-IP, zamiast z adresu proxy (127.0.0.1).
+
         FilterRegistrationBean<ForwardedHeaderFilter> bean = new FilterRegistrationBean<>();
         bean.setFilter(new ForwardedHeaderFilter());
         return bean;
     }
 
-    // --- ⭐️ DODANE BEANY DLA 2FA, KTÓRYCH BRAKOWAŁO ⭐️ ---
-
+    // --- BEANY DLA 2FA, KTÓRYCH BRAKOWAŁO ---
     /**
      * Bean, który tworzy `SecretGenerator` (do tworzenia sekretów 2FA)
      */
@@ -89,10 +85,10 @@ public class ApplicationConfig {
         DefaultCodeGenerator codeGenerator = new DefaultCodeGenerator(HashingAlgorithm.SHA1);
         return new DefaultCodeVerifier(codeGenerator, timeProvider);
     }
-    // ⭐️ DODANY BEAN DLA NAPRAWY BŁĘDU 413 (Maksymalny Rozmiar Pliku) ⭐️
+    //BEAN DLA NAPRAWY BŁĘDU 413 (Maksymalny Rozmiar Pliku) ⭐️
     @Bean
     public MultipartConfigElement multipartConfigElement() {
-        // Ustawienie limitu na 100 MB (w bajtach)
+
         long size = 100 * 1024 * 1024;
 
         MultipartConfigFactory factory = new MultipartConfigFactory();

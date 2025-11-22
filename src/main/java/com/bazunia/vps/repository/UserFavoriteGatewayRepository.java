@@ -11,6 +11,5 @@ public interface UserFavoriteGatewayRepository extends JpaRepository<UserFavorit
 
     @Query("SELECT ufg FROM UserFavoriteGateway ufg JOIN FETCH ufg.gateway WHERE ufg.user = :user")
     List<UserFavoriteGateway> findByUserWithGateway(User user);
-
     void deleteByUserAndGatewayId(User user, Long gatewayId);
 }

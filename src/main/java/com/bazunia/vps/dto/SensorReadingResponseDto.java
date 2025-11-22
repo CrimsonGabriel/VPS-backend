@@ -1,6 +1,5 @@
 package com.bazunia.vps.dto;
 
-// Usunęliśmy importy LocalDateTime, bo timestamp to long
 import java.io.Serializable;
 
 public record SensorReadingResponseDto(
@@ -26,8 +25,8 @@ public record SensorReadingResponseDto(
                 String.valueOf(gatewayId),
                 String.valueOf(sensorId),
                 type,
-                value,      // Przekazujemy String bezpośrednio
-                timestamp,  // Przekazujemy long bezpośrednio
+                value,
+                timestamp,
                 id
         );
     }

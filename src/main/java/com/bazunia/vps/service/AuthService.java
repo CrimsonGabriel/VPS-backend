@@ -18,7 +18,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import com.bazunia.vps.dto.EmailRegistrationRequest;
 import org.springframework.stereotype.Service;
 import com.bazunia.vps.dto.UserDetailsResponse;
-// Importy dla 2FA
 import dev.samstevens.totp.code.CodeVerifier;
 import dev.samstevens.totp.qr.QrData;
 import dev.samstevens.totp.secret.SecretGenerator;
@@ -31,21 +30,15 @@ import java.util.UUID;
 @Service
 public class AuthService {
 
-    // Stare zależności
     private final UserRepository userRepository;
     private final StatusService statusService;
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
-
-    // NOWE zależności dla 2FA
     private final SecretGenerator secretGenerator;
     private final CodeVerifier codeVerifier;
-
-    // ⭐️ NOWA ZALEŻNOŚĆ DLA E-MAILI ⭐️
     private final EmailService emailService;
 
-    // KLUCZ SERWERA DO WERYFIKACJI
     private static final String GOOGLE_CLIENT_ID = "79063316759-iva8uesd0vlj3in6eaeralk2kdkgv5or.apps.googleusercontent.com";
     private static final Logger logger = Logger.getLogger(AuthService.class.getName());
 
@@ -80,13 +73,13 @@ public class AuthService {
 
         logger.info("Pomyślna weryfikacja Google dla email: " + email);
 
-        // Znajdź lub stwórz usera
+
         return userRepository.findByEmail(email).orElseGet(() -> {
             User newUser = new User();
             newUser.setEmail(email);
             newUser.setName(name);
             newUser.setTwoFactorEnabled(false);
-            newUser.setEnabled(true); // ⭐️ UŻYTKOWNICY GOOGLE SĄ AKTYWNI OD RAZU ⭐️
+            newUser.setEnabled(true);
             logger.info("Tworzenie nowego usera (Google): " + email);
             return userRepository.save(newUser);
         });
@@ -101,16 +94,14 @@ public class AuthService {
 
             boolean requires2FA = is2FaRequired(user);
 
-            // ⭐️ NOWA LOGIKA: Sprawdź, czy użytkownik Google ma hasło
+
             boolean requiresPasswordSetup = (user.getPassword() == null);
 
             if (requires2FA) {
-                // Zwraca null JWT, ale idToken jest używany w kolejnym kroku
-                // Przekazujemy 'requiresPasswordSetup' = false, bo sprawdzenie hasła zrobimy PO 2FA
+
                 return new AuthResponse(null, true, "Wymagane 2FA", false);
             } else {
                 String jwt = jwtService.generateToken(user);
-                // Zwraca JWT i informację o konieczności ustawienia hasła
                 return new AuthResponse(jwt, false, "Zalogowano przez Google", requiresPasswordSetup);
             }
         } catch (Exception e) {
@@ -127,7 +118,6 @@ public class AuthService {
         User user = new User();
         user.setEmail(request.email());
         user.setPassword(passwordEncoder.encode(request.password()));
-        // Upewnijmy się, że nowi użytkownicy z panelu admina też są aktywni
         user.setEnabled(true);
         userRepository.save(user);
     }
@@ -142,7 +132,6 @@ public class AuthService {
         boolean requires2FA = is2FaRequired(user);
         String jwt = jwtService.generateToken(user);
 
-        // Użytkownicy logujący się hasłem ZAWSZE mają hasło
         boolean requiresPasswordSetup = false;
 
         if (requires2FA) {
@@ -152,13 +141,16 @@ public class AuthService {
         }
     }
 
-    // === ⭐️ NOWA LOGIKA DLA ENDPOINTÓW 2FA (Przeniesiona z server.js) ⭐️ ===
+    // === NOWA LOGIKA DLA ENDPOINTÓW 2FA (Przeniesiona z server.js) ️===
 
-    public boolean getTwoFaStatus(String jwtToken) throws Exception { User user = getUserFromJwt(jwtToken);
+
+    public boolean getTwoFaStatus(String jwtToken) {
+        User user = getUserFromJwt(jwtToken);
         return user.isTwoFactorEnabled();
     }
 
-    public TwoFaSetupResponse setupTwoFa(String jwtToken) throws Exception { User user = getUserFromJwt(jwtToken);
+    public TwoFaSetupResponse setupTwoFa(String jwtToken) {
+        User user = getUserFromJwt(jwtToken);
 
         if (user.isTwoFactorEnabled()) {
             return new TwoFaSetupResponse(false, "2FA jest już aktywne. Wyłącz je najpierw.", null);
@@ -174,17 +166,16 @@ public class AuthService {
                 .issuer("Bazunia App")
                 .build();
 
-        // Zwracamy URL, Android sam wygeneruje QR code
         return new TwoFaSetupResponse(true, secret, data.getUri());
     }
 
-    public boolean verifyAndEnableTwoFa(String jwtToken, String totpCode) throws Exception { User user = getUserFromJwt(jwtToken);
+    public boolean verifyAndEnableTwoFa(String jwtToken, String totpCode) {
+        User user = getUserFromJwt(jwtToken);
 
         if (user.getTwoFactorSecret() == null) {
             throw new IllegalStateException("Sekret 2FA nie został wygenerowany.");
         }
-        // ⭐️⭐️ ZMODYFIKOWANE: Użycie nowej metody pomocniczej ⭐️⭐️
-        // Logika weryfikacji została przeniesiona, ale musimy zapisać stan
+
         if (codeVerifier.isValidCode(user.getTwoFactorSecret(), totpCode)) {
             user.setTwoFactorEnabled(true);
             user.setLastTwoFactorLogin(LocalDateTime.now());
@@ -194,13 +185,12 @@ public class AuthService {
         return false;
     }
 
-    public boolean disableTwoFa(String jwtToken, String totpCode) throws Exception { User user = getUserFromJwt(jwtToken);
+    public boolean disableTwoFa(String jwtToken, String totpCode) {
+        User user = getUserFromJwt(jwtToken);
 
         if (!user.isTwoFactorEnabled() || user.getTwoFactorSecret() == null) {
             throw new IllegalStateException("2FA nie jest włączone.");
         }
-        // ⭐️⭐️ ZMODYFIKOWANE: Użycie nowej metody pomocniczej ⭐️⭐️
-        // Logika weryfikacji została przeniesiona, ale musimy zapisać stan
         if (codeVerifier.isValidCode(user.getTwoFactorSecret(), totpCode)) {
             user.setTwoFactorEnabled(false);
             user.setTwoFactorSecret(null);
@@ -211,20 +201,21 @@ public class AuthService {
         return false;
     }
 
-    public LoginResponse loginVerifyTwoFa(String googleToken, String totpCode) throws Exception {
-        User user = verifyGoogleTokenAndGetUser(googleToken);
+    public LoginResponse loginVerifyTwoFa(String googleToken, String totpCode) {
+        try {
+            User user = verifyGoogleTokenAndGetUser(googleToken);
 
-        // ⭐️⭐️ ZMODYFIKOWANE: Użycie nowej metody pomocniczej ⭐️⭐️
-        return verify2FaCodeAndGenerateJwt(user, totpCode);
+            return verify2FaCodeAndGenerateJwt(user, totpCode);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Błąd weryfikacji: " + e.getMessage(), e);
+        }
     }
 
     public record AuthResponse(String jwt, boolean requires2FA, String message, boolean requiresPasswordSetup) {}
 
-    // ⭐️⭐️ NOWA METODA ⭐️⭐️
     public void registerAndroidUser(EmailRegistrationRequest request) {
-        // 1. Sprawdź, czy e-mail już istnieje
         if (userRepository.findByEmail(request.email()).isPresent()) {
-            // Rzucamy wyjątek, który kontroler zamieni na 409 Conflict
             throw new IllegalStateException("Email już zajęty");
         }
 
@@ -233,7 +224,7 @@ public class AuthService {
         user.setEmail(request.email());
         user.setPassword(passwordEncoder.encode(request.password()));
         user.setRole(Role.USER);
-        user.setEnabled(false); // ⭐️ WAŻNE: Konto jest NIEAKTYWNE
+        user.setEnabled(false);
 
         // 3. Wygeneruj token aktywacyjny
         String token = UUID.randomUUID().toString();
@@ -243,15 +234,12 @@ public class AuthService {
         userRepository.save(user);
 
         // 5. Wyślij e-mail aktywacyjny (zakładając, że masz EmailService)
-        // Musisz zaimplementować EmailService i skonfigurować SMTP w application.properties!
         String activationLink = "https://testserwera.pl/api/auth/android/activate?token=" + token;
         emailService.sendActivationEmail(user.getEmail(), activationLink);
     }
 
-    // ⭐️⭐️ NOWA METODA ⭐️⭐️
     public void activateUser(String token) {
         // 1. Znajdź użytkownika po tokenie
-        // (Musisz dodać metodę findByActivationToken do swojego UserRepository!)
         User user = userRepository.findByActivationToken(token)
                 .orElseThrow(() -> new IllegalArgumentException("Nieprawidłowy token aktywacyjny"));
 
@@ -264,9 +252,9 @@ public class AuthService {
         // emailService.sendWelcomeEmail(user.getEmail());
     }
 
-    // ⭐️⭐️ NOWA METODA DO WERYFIKACJI 2FA PO ZALOGOWANIU E-MAILEM ⭐️⭐️
-    public LoginResponse loginVerifyEmailTwoFa(String tempToken, String totpCode) throws Exception {
-        // Krok 1: Użyj JwtService, aby wyodrębnić email z tokena tymczasowego
+    // METODA DO WERYFIKACJI 2FA PO ZALOGOWANIU E-MAILEM
+
+    public LoginResponse loginVerifyEmailTwoFa(String tempToken, String totpCode) {
         String email = jwtService.extractUsername(tempToken);
         if (email == null) {
             throw new SecurityException("Nieprawidłowy token tymczasowy.");
@@ -276,14 +264,9 @@ public class AuthService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new IllegalStateException("Użytkownik z tokena nie znaleziony."));
 
-        // ⭐️⭐️ ZMODYFIKOWANE: Użycie nowej metody pomocniczej ⭐️⭐️
         return verify2FaCodeAndGenerateJwt(user, totpCode);
     }
 
-
-    // ⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️
-    // ⭐️⭐️               NOWE METODY POMOCNICZE                 ⭐️⭐️
-    // ⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️⭐️
 
     /**
      * (Refaktoryzacja) Sprawdza, czy 2FA jest włączone i czy minął 5-minutowy okres karencji.
@@ -291,10 +274,8 @@ public class AuthService {
      */
     private boolean is2FaRequired(User user) {
         if (user.isTwoFactorEnabled()) {
-            if (user.getLastTwoFactorLogin() == null ||
-                    user.getLastTwoFactorLogin().isBefore(LocalDateTime.now().minusMinutes(5))) {
-                return true;
-            }
+            return user.getLastTwoFactorLogin() == null ||
+                    user.getLastTwoFactorLogin().isBefore(LocalDateTime.now().minusMinutes(5));
         }
         return false;
     }
@@ -306,7 +287,6 @@ public class AuthService {
 
     private LoginResponse verify2FaCodeAndGenerateJwt(User user, String totpCode) {
 
-        // (Rekord LoginResponse jest teraz zdefiniowany wyżej)
 
         if (!user.isTwoFactorEnabled() || user.getTwoFactorSecret() == null) {
             throw new IllegalStateException("2FA nie jest wymagane dla tego użytkownika.");
@@ -316,39 +296,32 @@ public class AuthService {
             user.setLastTwoFactorLogin(LocalDateTime.now());
             userRepository.save(user);
 
-            // ⭐️ NOWA LOGIKA: Sprawdź hasło PO weryfikacji 2FA
             boolean requiresPasswordSetup = (user.getPassword() == null);
 
             String jwt = jwtService.generateToken(user);
-            return new LoginResponse(jwt, requiresPasswordSetup); // ⭐️ Przekaż nową flagę
+            return new LoginResponse(jwt, requiresPasswordSetup);
         } else {
             throw new SecurityException("Nieprawidłowy kod 2FA.");
         }
     }
 
-    // ⭐️⭐️ NOWA METODA POMOCNICZA ⭐️⭐️
     private User getUserFromJwt(String jwtToken) {
-        // Używamy JwtService do wyodrębnienia emaila z tokena
         String email = jwtService.extractUsername(jwtToken);
         if (email == null) {
             throw new SecurityException("Nieprawidłowy token JWT.");
         }
-        // Znajdujemy użytkownika w bazie
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new IllegalStateException("Użytkownik z tokena JWT nie znaleziony."));
     }
-    // ⭐️⭐️ NOWA METODA ⭐️⭐️
     /**
      * Ustawia hasło dla uwierzytelnionego użytkownika (np. po logowaniu Google).
      * Używa emaila wyciągniętego z tokena JWT, aby mieć pewność, że użytkownik
      * jest tym, za kogo się podaje.
      */
     public void setUserPassword(String jwtToken, String newPassword) {
-        // Używamy metody pomocniczej, którą już mamy
         User user = getUserFromJwt(jwtToken);
 
         if (user.getPassword() != null) {
-            // Na wszelki wypadek, żeby nie nadpisać istniejącego hasła tą metodą
             throw new IllegalStateException("Użytkownik ma już ustawione hasło.");
         }
 
@@ -360,7 +333,7 @@ public class AuthService {
         userRepository.save(user);
         logger.info("Hasło zostało pomyślnie ustawione dla użytkownika: " + user.getEmail());
     }
-    // ⭐️⭐️ NOWA METODA ⭐️⭐️
+
     /**
      * Zmienia hasło uwierzytelnionego użytkownika.
      * Wymaga podania obecnego hasła w celu weryfikacji.
@@ -372,13 +345,13 @@ public class AuthService {
      * @throws IllegalArgumentException jeśli nowe hasło jest za krótkie
      * @throws IllegalStateException    jeśli użytkownik (np. Google) nie ma ustawionego hasła
      */
+
     public void changeUserPassword(String jwtToken, String currentPassword, String newPassword) {
         // Krok 1: Znajdź użytkownika na podstawie tokena
         User user = getUserFromJwt(jwtToken);
 
         // Krok 2: Sprawdź, czy użytkownik w ogóle ma ustawione hasło
         if (user.getPassword() == null) {
-            // Użytkownik zalogowany przez Google, który nigdy nie ustawił hasła
             throw new IllegalStateException("Użytkownik nie ma ustawionego hasła, którego można by użyć do weryfikacji.");
         }
 
@@ -404,18 +377,16 @@ public class AuthService {
      * @return Obiekt DTO z danymi użytkownika
      */
     public UserDetailsResponse getUserDetails(String jwtToken) {
-        // Używamy istniejącej metody pomocniczej do znalezienia użytkownika
         User user = getUserFromJwt(jwtToken);
 
-        // Zwracamy nowy, prosty obiekt DTO
         return new UserDetailsResponse(
-                user.getId(),   // <--- DODAJ TO (musi pasować do kolejności w DTO)
+                user.getId(),
                 user.getEmail(),
                 user.getName(),
                 user.getRole().name()
         );
     }
-// ⭐️⭐️ NOWA METODA ⭐️⭐️
+
     /**
      * Rozpoczyna proces resetowania hasła dla użytkownika.
      * Znajduje użytkownika, generuje token i wysyła e-mail.
@@ -429,7 +400,6 @@ public class AuthService {
         Optional<User> userOptional = userRepository.findByEmail(email);
 
         // Krok 2: Jeśli użytkownik nie istnieje LUB jest nieaktywny,
-        // cicho zakończ operację. Nie informuj klienta o błędzie.
         if (userOptional.isEmpty() || !userOptional.get().isEnabled()) {
             logger.warning("Prośba o reset hasła dla nieistniejącego lub nieaktywnego e-maila: " + email);
             return; // Ciche wyjście
@@ -440,7 +410,7 @@ public class AuthService {
         // Krok 3: Wygeneruj token i datę wygaśnięcia
         String token = UUID.randomUUID().toString();
         user.setPasswordResetToken(token);
-        user.setPasswordResetTokenExpiry(LocalDateTime.now().plusHours(1)); // Ważny 1 godzinę
+        user.setPasswordResetTokenExpiry(LocalDateTime.now().plusHours(1));
 
         // Krok 4: Zapisz token w bazie
         userRepository.save(user);
@@ -454,7 +424,6 @@ public class AuthService {
         logger.info("Pomyślnie wygenerowano i wysłano link resetujący dla: " + email);
     }
 
-    // ⭐️⭐️ NOWA METODA ⭐️⭐️
     /**
      * Weryfikuje token resetujący i ustawia nowe hasło dla użytkownika.
      *
@@ -469,7 +438,6 @@ public class AuthService {
 
         // Krok 2: Sprawdź, czy token nie wygasł
         if (user.getPasswordResetTokenExpiry() == null || user.getPasswordResetTokenExpiry().isBefore(LocalDateTime.now())) {
-            // Dodatkowo wyczyść token, jeśli wygasł
             user.setPasswordResetToken(null);
             user.setPasswordResetTokenExpiry(null);
             userRepository.save(user);

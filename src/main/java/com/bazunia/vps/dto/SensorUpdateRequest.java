@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Size;
  * Wszystkie pola są opcjonalne. Jeśli pole ma wartość 'null' w żądaniu,
  * nie zostanie ono zaktualizowane w bazie danych.
  */
+
 public record SensorUpdateRequest(
         Long gatewayId,
 

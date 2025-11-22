@@ -8,7 +8,6 @@ import java.time.LocalDateTime;
 @Data
 public class SensorCreateRequest {
 
-    // Pola obowiązkowe (zgodnie z Twoim nowym wymaganiem)
     @NotNull(message = "ID sensora jest wymagane")
     private Long id;
 
@@ -24,9 +23,8 @@ public class SensorCreateRequest {
     private String type;
 
     @NotNull(message = "Data utworzenia jest wymagana")
-    private LocalDateTime createdAt; // Np. "2025-11-17T22:30:00"
+    private LocalDateTime createdAt;
 
-    // Pola nieobowiązkowe
     @Size(max = 255)
     private String description;
 

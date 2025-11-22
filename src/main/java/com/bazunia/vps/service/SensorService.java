@@ -36,6 +36,13 @@ public class SensorService {
                 });
 
         // 4. Stwórz nowy obiekt Sensor
+        Sensor newSensor = getSensor(request, gateway);
+
+        // 5. Zapisz sensor w bazie
+        return sensorRepository.save(newSensor);
+    }
+
+    private static Sensor getSensor(SensorCreateRequest request, Gateway gateway) {
         Sensor newSensor = new Sensor();
 
         // Ustaw pola obowiązkowe (teraz ustawiamy ID i createdAt ręcznie)
@@ -56,9 +63,7 @@ public class SensorService {
         if (request.getReportingEnabled() != null) {
             newSensor.setReportingEnabled(request.getReportingEnabled());
         }
-
-        // 5. Zapisz sensor w bazie
-        return sensorRepository.save(newSensor);
+        return newSensor;
     }
 
     // ----------------------------------------------------------------------
