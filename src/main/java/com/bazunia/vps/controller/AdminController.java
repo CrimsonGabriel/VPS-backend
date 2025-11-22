@@ -343,4 +343,84 @@ public class AdminController {
 
         return ResponseEntity.ok(Map.of("message", "Decyzja zapisana: " + decision));
     }
+    // ----------------------------------------------------------------------
+    // --- 6. MONITOROWANIE STATUSU BRAMEK (NOWOŚĆ) ---
+    // ----------------------------------------------------------------------
+
+    // DTO tylko dla widoku statusu admina
+    public record AdminSensorSummaryDto(
+            String name,
+            String type,
+            Integer batteryLevel,
+            boolean reportingEnabled
+    ) {}
+
+    public record AdminSharedUserDto(
+            String email,
+            String permissionLevel
+    ) {}
+
+    public record AdminGatewayStatusDto(
+            Long id,
+            String name,
+            String ownerEmail,
+            String status,       // np. ONLINE, OFFLINE
+            String lastSeen,     // Data ostatniej aktywności
+            String description,
+            String folder,
+            List<AdminSensorSummaryDto> sensors,
+            List<AdminSharedUserDto> sharedWith
+    ) {}
+
+    @GetMapping("/gateways/status")
+    @Transactional // Ważne dla Lazy Loading (pobieranie permissions)
+    public ResponseEntity<List<AdminGatewayStatusDto>> getAllGatewaysStatus() {
+        List<Gateway> gateways = gatewayRepository.findAll();
+
+        List<AdminGatewayStatusDto> result = gateways.stream().map(gateway -> {
+
+            // 1. Właściciel
+            String ownerEmail = (gateway.getOwner() != null) ? gateway.getOwner().getEmail() : "Brak właściciela";
+
+            // 2. Sensory (bateria i nazwa)
+            List<AdminSensorSummaryDto> sensors = gateway.getSensors().stream()
+                    .map(s -> new AdminSensorSummaryDto(
+                            s.getName(),
+                            s.getType(),
+                            s.getBatteryLevel(),
+                            s.isReportingEnabled()
+                    ))
+                    .collect(Collectors.toList());
+
+            // 3. Udostępnienia (komu udostępniono)
+            List<AdminSharedUserDto> sharedWith = new ArrayList<>();
+            if (gateway.getPermissions() != null) {
+                sharedWith = gateway.getPermissions().stream()
+                        .map(perm -> new AdminSharedUserDto(
+                                perm.getUser().getEmail(),
+                                perm.getPermissionLevel().name()
+                        ))
+                        .collect(Collectors.toList());
+            }
+
+            // 4. Formatowanie daty
+            String lastSeenStr = (gateway.getLastSeen() != null)
+                    ? gateway.getLastSeen().toString()
+                    : null;
+
+            return new AdminGatewayStatusDto(
+                    gateway.getId(),
+                    gateway.getName(),
+                    ownerEmail,
+                    gateway.getStatus(),
+                    lastSeenStr,
+                    gateway.getDescription(),
+                    gateway.getFolder(),
+                    sensors,
+                    sharedWith
+            );
+        }).collect(Collectors.toList());
+
+        return ResponseEntity.ok(result);
+    }
 }
