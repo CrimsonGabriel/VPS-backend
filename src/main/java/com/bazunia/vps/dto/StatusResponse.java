@@ -7,8 +7,8 @@ import java.util.Set;
 public record StatusResponse(
         String lastReportText,
         String registeredRPiIp,
-        Set<String> registeredAndroidIps,
+        Set<String> androidClients,
+        Set<String> rpiClients,
         List<String> authorizedUsers,
-        Map<String, TwoFaStatusDto> users2FAStatus
-) {
-}
+        Map<String, TwoFaStatusDto> users2FA
+) {}

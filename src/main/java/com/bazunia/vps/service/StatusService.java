@@ -3,52 +3,52 @@ package com.bazunia.vps.service;
 import lombok.Getter;
 import org.springframework.stereotype.Service;
 
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Service
-@Getter
 public class StatusService {
 
-    private String registeredRPiIp = "Brak IP RPi";
-    private String lastReportText = "Brak ostatniego meldunku czasu";
+    // Tutaj NIE dajemy @Getter, bo musimy ręcznie wywołać .get()
+    private final AtomicReference<String> registeredRPiIp = new AtomicReference<>("Brak IP RPi");
+    private final AtomicReference<String> lastReportText = new AtomicReference<>("Brak ostatniego meldunku czasu");
 
-    // Zbiór IP KLIENTÓW MOBILNYCH (Android/Przeglądarka)
-    private final Set<String> uniqueAndroidIPs = Collections.synchronizedSet(new HashSet<>());
+    // Tutaj DAJEMY @Getter - Lombok sam zrobi publiczne metody getUniqueAndroidIPs() itp.
+    @Getter
+    private final Set<String> uniqueAndroidIPs = ConcurrentHashMap.newKeySet();
 
-    // ⭐️ NOWE POLE: Zbiór unikalnych IP RPi (bramki) ⭐️
-    private final Set<String> uniqueRpiIPs = Collections.synchronizedSet(new HashSet<>());
+    @Getter
+    private final Set<String> uniqueRpiIPs = ConcurrentHashMap.newKeySet();
 
     // --- Metody do aktualizacji stanu ---
 
-    public synchronized void updateRpiIp(String ip) {
-        this.registeredRPiIp = ip;
+    public void updateRpiIp(String ip) {
+        this.registeredRPiIp.set(ip);
     }
 
-    public synchronized void updateLastReport(String report) {
-        this.lastReportText = report;
+    public void updateLastReport(String report) {
+        this.lastReportText.set(report);
     }
 
-    /** Dodaje IP klienta mobilnego (Android). */
     public void addAndroidIp(String ip) {
         if (ip != null && !ip.isEmpty()) {
             uniqueAndroidIPs.add(ip);
         }
     }
 
-    /** ⭐️ NOWA METODA: Dodaje IP klienta RPi (Bramki). ⭐️ */
     public void addRpiIp(String ip) {
         if (ip != null && !ip.isEmpty()) {
             uniqueRpiIPs.add(ip);
         }
     }
 
-    public Set<String> getUniqueAndroidIPs() {
-        return new HashSet<>(uniqueAndroidIPs);
+
+    public String getRegisteredRPiIp() {
+        return registeredRPiIp.get();
     }
 
-//    public Set<String> getUniqueRpiIPs() {
-//        return new HashSet<>(uniqueRpiIPs); // Zbiór RPi, może być użyty w przyszłości
-//    }
+    public String getLastReportText() {
+        return lastReportText.get();
+    }
 }

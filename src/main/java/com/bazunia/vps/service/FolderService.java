@@ -7,7 +7,7 @@ import com.bazunia.vps.dto.SensorDto;
 import com.bazunia.vps.model.*;
 import com.bazunia.vps.repository.*;
 import jakarta.persistence.EntityNotFoundException;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 
 @Service
 @Transactional
+@RequiredArgsConstructor
 public class FolderService {
 
     private final FolderRepository folderRepository;
@@ -25,19 +26,6 @@ public class FolderService {
     private final UserGatewayPermissionRepository permissionRepository;
     private final UserFavoriteGatewayRepository favoriteGatewayRepository;
     private final UserFavoriteSensorRepository favoriteSensorRepository;
-
-    @Autowired
-    public FolderService(FolderRepository folderRepository, GatewayRepository gatewayRepository,
-                         SensorRepository sensorRepository, UserGatewayPermissionRepository permissionRepository,
-                         UserFavoriteGatewayRepository favoriteGatewayRepository,
-                         UserFavoriteSensorRepository favoriteSensorRepository) {
-        this.folderRepository = folderRepository;
-        this.gatewayRepository = gatewayRepository;
-        this.sensorRepository = sensorRepository;
-        this.permissionRepository = permissionRepository;
-        this.favoriteGatewayRepository = favoriteGatewayRepository;
-        this.favoriteSensorRepository = favoriteSensorRepository;
-    }
 
     // --- LOGIKA FOLDERÓW ---
 
@@ -59,8 +47,7 @@ public class FolderService {
 
         folder.setName(request.name());
         folder.setColor(request.color());
-        Folder updatedFolder = folderRepository.save(folder);
-        return FolderDto.fromEntity(updatedFolder);
+        return FolderDto.fromEntity(folderRepository.save(folder));
     }
 
     public void deleteFolder(Long folderId, User user) {
@@ -70,18 +57,15 @@ public class FolderService {
     }
 
     public void addGatewayToFolder(Long folderId, Long gatewayId, User user) {
-        // 1. Sprawdź, czy folder należy do użytkownika
         Folder folder = folderRepository.findByIdAndOwnerWithGatewaysAndSensors(folderId, user)
                 .orElseThrow(() -> new EntityNotFoundException("Folder not found"));
 
-        // 2. Sprawdź, czy bramka istnieje
         Gateway gateway = gatewayRepository.findById(gatewayId)
                 .orElseThrow(() -> new EntityNotFoundException("Gateway not found"));
 
-        // 3. ⭐️ POPRAWKA 1 (Dla Bramek) ⭐️
-        // checkGatewayPermission(user, gatewayId); // Wyłączamy to błędne sprawdzenie
+        // ✅ POPRAWIONE SPRAWDZANIE UPRAWNIEŃ
+        validateAccessToGateway(user, gateway);
 
-        // 4. Dodaj bramkę
         folder.getGateways().add(gateway);
         folderRepository.save(folder);
     }
@@ -90,10 +74,36 @@ public class FolderService {
         Folder folder = folderRepository.findByIdAndOwnerWithGatewaysAndSensors(folderId, user)
                 .orElseThrow(() -> new EntityNotFoundException("Folder not found"));
 
+        // Tu nie musimy sprawdzać dostępu do bramki, bo user usuwa ją ze SWOJEGO folderu
         Gateway gateway = gatewayRepository.findById(gatewayId)
                 .orElseThrow(() -> new EntityNotFoundException("Gateway not found"));
 
         folder.getGateways().remove(gateway);
+        folderRepository.save(folder);
+    }
+
+    public void addSensorToFolder(Long folderId, Long sensorId, User user) {
+        Folder folder = folderRepository.findByIdAndOwnerWithGatewaysAndSensors(folderId, user)
+                .orElseThrow(() -> new EntityNotFoundException("Folder not found"));
+
+        Sensor sensor = sensorRepository.findById(sensorId)
+                .orElseThrow(() -> new EntityNotFoundException("Sensor not found"));
+
+        // ✅ POPRAWIONE SPRAWDZANIE UPRAWNIEŃ (Przez bramkę rodzica)
+        validateAccessToGateway(user, sensor.getGateway());
+
+        folder.getSensors().add(sensor);
+        folderRepository.save(folder);
+    }
+
+    public void removeSensorFromFolder(Long folderId, Long sensorId, User user) {
+        Folder folder = folderRepository.findByIdAndOwnerWithGatewaysAndSensors(folderId, user)
+                .orElseThrow(() -> new EntityNotFoundException("Folder not found"));
+
+        Sensor sensor = sensorRepository.findById(sensorId)
+                .orElseThrow(() -> new EntityNotFoundException("Sensor not found"));
+
+        folder.getSensors().remove(sensor);
         folderRepository.save(folder);
     }
 
@@ -103,8 +113,7 @@ public class FolderService {
         Gateway gateway = gatewayRepository.findById(gatewayId)
                 .orElseThrow(() -> new EntityNotFoundException("Gateway not found"));
 
-        // (To też pewnie rzuci błędem, jeśli go nie zakomentujesz)
-        // checkGatewayPermission(user, gatewayId);
+        validateAccessToGateway(user, gateway);
 
         UserFavoriteGateway favorite = new UserFavoriteGateway(user, gateway);
         favoriteGatewayRepository.save(favorite);
@@ -124,8 +133,7 @@ public class FolderService {
         Sensor sensor = sensorRepository.findById(sensorId)
                 .orElseThrow(() -> new EntityNotFoundException("Sensor not found"));
 
-        // (To też pewnie rzuci błędem)
-        // checkGatewayPermission(user, sensor.getGateway().getId());
+        validateAccessToGateway(user, sensor.getGateway());
 
         UserFavoriteSensor favorite = new UserFavoriteSensor(user, sensor);
         favoriteSensorRepository.save(favorite);
@@ -141,41 +149,21 @@ public class FolderService {
                 .collect(Collectors.toList());
     }
 
-    // --- Metoda pomocnicza ---
+    // --- METODA POMOCNICZA (VALIDATOR) ---
 
-    private void checkGatewayPermission(User user, Long gatewayId) {
-        UserGatewayPermissionId permissionId = new UserGatewayPermissionId(user.getId(), gatewayId);
-        permissionRepository.findById(permissionId)
-                .orElseThrow(() -> new AccessDeniedException("User does not have permission for gateway " + gatewayId));
-    }
+    private void validateAccessToGateway(User user, Gateway gateway) {
+        // 1. Czy user jest właścicielem?
+        if (gateway.getOwner().getId().equals(user.getId())) {
+            return; // OK
+        }
 
-    // --- NOWE METODY DLA CZUJNIKÓW W FOLDERACH ---
+        // 2. Jeśli nie, czy ma uprawnienie (Shared)?
+        boolean hasPermission = permissionRepository
+                .findByGatewayIdAndUserId(gateway.getId(), user.getId())
+                .isPresent();
 
-    public void addSensorToFolder(Long folderId, Long sensorId, User user) {
-        // 1. Sprawdź, czy folder należy do użytkownika
-        Folder folder = folderRepository.findByIdAndOwnerWithGatewaysAndSensors(folderId, user)
-                .orElseThrow(() -> new EntityNotFoundException("Folder not found"));
-
-        // 2. Znajdź czujnik
-        Sensor sensor = sensorRepository.findById(sensorId)
-                .orElseThrow(() -> new EntityNotFoundException("Sensor not found"));
-
-        // 3. ⭐️ POPRAWKA 2 (Dla Czujników) ⭐️
-        // checkGatewayPermission(user, sensor.getGateway().getId()); // Wyłączamy to błędne sprawdzenie
-
-        // 4. Dodaj czujnik i zapisz
-        folder.getSensors().add(sensor);
-        folderRepository.save(folder);
-    }
-
-    public void removeSensorFromFolder(Long folderId, Long sensorId, User user) {
-        Folder folder = folderRepository.findByIdAndOwnerWithGatewaysAndSensors(folderId, user)
-                .orElseThrow(() -> new EntityNotFoundException("Folder not found"));
-
-        Sensor sensor = sensorRepository.findById(sensorId)
-                .orElseThrow(() -> new EntityNotFoundException("Sensor not found"));
-
-        folder.getSensors().remove(sensor);
-        folderRepository.save(folder);
+        if (!hasPermission) {
+            throw new AccessDeniedException("Brak dostępu do bramki (nie jesteś właścicielem ani nie została udostępniona).");
+        }
     }
 }

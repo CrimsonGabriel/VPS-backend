@@ -3,6 +3,7 @@ package com.bazunia.vps.service;
 import com.bazunia.vps.dto.UpdateDtos;
 import com.bazunia.vps.model.*;
 import com.bazunia.vps.repository.*;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,7 +19,6 @@ public class UpdateService {
     private final UpdateAssignmentRepository assignmentRepository;
     private final GatewayRepository gatewayRepository;
     private final SensorRepository sensorRepository;
-
 
     /**
      * Tworzy aktualizację i przypisuje ją do wybranych celów.
@@ -37,29 +37,27 @@ public class UpdateService {
         update = systemUpdateRepository.save(update);
 
         // 2. Rozdziel logikę w zależności od celu
-        if (request.getTargetType() == SystemUpdate.UpdateTargetType.APP) {
-            // Aktualizacja aplikacji dla konkretnego usera
-            createAssignment(update, request.getTargetUserId(), request.getTargetUserId());
+        switch (request.getTargetType()) {
+            case APP -> createAssignment(update, request.getTargetUserId(), request.getTargetUserId());
 
-        } else if (request.getTargetType() == SystemUpdate.UpdateTargetType.GATEWAY) {
-            if (request.getTargetGatewayId() != null) {
-                // Pojedyncza bramka
-                Gateway g = gatewayRepository.findById(request.getTargetGatewayId())
-                        .orElseThrow(() -> new RuntimeException("Gateway not found"));
+            case GATEWAY -> {
+                if (request.getTargetGatewayId() != null) {
+                    Gateway g = gatewayRepository.findById(request.getTargetGatewayId())
+                            .orElseThrow(() -> new EntityNotFoundException("Gateway not found with ID: " + request.getTargetGatewayId()));
 
-                // Przyjmuję, że Gateway ma metodę getOwnerUserId() lub User w relacji
-                Long ownerId = g.getOwner() != null ? g.getOwner().getId() : null;
-                createAssignment(update, g.getId(), ownerId);
+                    Long ownerId = g.getOwner() != null ? g.getOwner().getId() : null;
+                    createAssignment(update, g.getId(), ownerId);
+                }
             }
-            // Usunięto pusty blok else (logika dla WSZYSTKICH bramek nie była zaimplementowana)
 
-        } else if (request.getTargetType() == SystemUpdate.UpdateTargetType.SENSOR) {
-            if (request.getTargetSensorId() != null) {
-                Sensor s = sensorRepository.findById(request.getTargetSensorId())
-                        .orElseThrow(() -> new RuntimeException("Sensor not found"));
-                // Znajdź właściciela przez bramkę
-                Long ownerId = s.getGateway().getOwner().getId();
-                createAssignment(update, s.getId(), ownerId);
+            case SENSOR -> {
+                if (request.getTargetSensorId() != null) {
+                    Sensor s = sensorRepository.findById(request.getTargetSensorId())
+                            .orElseThrow(() -> new EntityNotFoundException("Sensor not found with ID: " + request.getTargetSensorId()));
+
+                    Long ownerId = s.getGateway().getOwner().getId();
+                    createAssignment(update, s.getId(), ownerId);
+                }
             }
         }
 
@@ -80,8 +78,10 @@ public class UpdateService {
     /**
      * Pobiera aktualizacje dla panelu admina.
      */
+    @Transactional(readOnly = true)
     public List<UpdateDtos.UpdateSummaryDto> getAllUpdatesSummary() {
         List<SystemUpdate> updates = systemUpdateRepository.findAll();
+
         return updates.stream().map(u -> {
             UpdateDtos.UpdateSummaryDto dto = new UpdateDtos.UpdateSummaryDto();
             dto.setId(u.getId());
@@ -91,7 +91,9 @@ public class UpdateService {
             dto.setTargetType(u.getTargetType());
             dto.setCreatedAt(u.getCreatedAt());
 
+            // Pobieramy przypisania dla tej aktualizacji
             List<UpdateAssignment> assignments = assignmentRepository.findBySystemUpdateId(u.getId());
+
             List<UpdateDtos.AssignmentDto> assignmentDtos = assignments.stream().map(a -> {
                 UpdateDtos.AssignmentDto ad = new UpdateDtos.AssignmentDto();
                 ad.setId(a.getId());
@@ -110,16 +112,13 @@ public class UpdateService {
 
     /**
      * Resend / Retry dla Admina.
-     * Resetuje status do PENDING dla istniejącego assignmentu.
      */
     @Transactional
     public void resendUpdate(Long assignmentId) {
         UpdateAssignment assignment = assignmentRepository.findById(assignmentId)
-                .orElseThrow(() -> new RuntimeException("Assignment not found"));
+                .orElseThrow(() -> new EntityNotFoundException("Assignment not found: " + assignmentId));
 
         assignment.setStatus(UpdateAssignment.AssignmentStatus.PENDING);
-        // Opcjonalnie: wyzeruj licznik odroczeń, jeśli admin wymusza ponowienie
-        // assignment.setDeferCount(0);
         assignment.setLastActionAt(java.time.LocalDateTime.now());
         assignmentRepository.save(assignment);
     }
@@ -127,6 +126,7 @@ public class UpdateService {
     /**
      * Dla API Klienta (Android): Pobiera oczekujące aktualizacje dla usera.
      */
+    @Transactional(readOnly = true)
     public List<UpdateDtos.ClientUpdateResponse> getPendingUpdatesForUser(Long userId) {
         List<UpdateAssignment> assignments = assignmentRepository.findByRecipientUserId(userId);
 
@@ -151,11 +151,10 @@ public class UpdateService {
     @Transactional
     public void updateAssignmentStatus(Long assignmentId, UpdateAssignment.AssignmentStatus newStatus) {
         UpdateAssignment assignment = assignmentRepository.findById(assignmentId)
-                .orElseThrow(() -> new RuntimeException("Assignment not found"));
+                .orElseThrow(() -> new EntityNotFoundException("Assignment not found: " + assignmentId));
 
         if (newStatus == UpdateAssignment.AssignmentStatus.DEFERRED) {
             assignment.setDeferCount(assignment.getDeferCount() + 1);
-            // Usunięto pusty blok if sprawdzający deferCount > 1 (tylko komentarze, brak logiki)
         }
 
         assignment.setStatus(newStatus);

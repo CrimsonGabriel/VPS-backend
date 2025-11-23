@@ -1,6 +1,7 @@
 package com.bazunia.vps.config;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -27,91 +28,47 @@ public class SecurityConfig {
 
     private final AuthenticationProvider authenticationProvider;
     private final JwtAuthenticationFilter jwtAuthFilter;
-
     private final AuthenticationEntryPoint authenticationEntryPoint;
     private final AccessDeniedHandler accessDeniedHandler;
+
+    // Pobieramy dozwolone origin z pliku properties (domyślnie localhost)
+    @Value("${app.cors.allowed-origins:http://localhost:5173,http://localhost:3000}")
+    private List<String> allowedOrigins;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
-                .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Konfiguracja CORS bez zmian
-
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(authz -> authz
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-
-                        // --- 1. ENDPOINTY PUBLICZNE ---
-                        // (Logowanie, Rejestracja, Reset Hasła, RPi, Status)
+                        // Publiczne
                         .requestMatchers(
-                                "/",
-                                "/status/json",
-                                "/debug-key",
-                                // RPi (chronione hasłem w kontrolerze)
-                                "/register/rasp",
-                                "/register/android",
-                                "/update",
-                                "/data",
-                                "/api/sensors/battery",
-                                "/api/sensors/config",
-                                // Logowanie i Rejestracja
-                                "/api/auth/google",
-                                "/api/auth/login",
-                                "/api/auth/android/register",
-                                "/api/auth/android/activate",
-                                // Weryfikacja 2FA (tylko przy logowaniu)
-                                "/api/auth/2fa/login-verify",
-                                "/api/auth/2fa/email-verify",
-                                // Reset hasła
-                                "/api/auth/request-password-reset",
-                                "/api/auth/reset-password",
-                                // frontend
-                                "/updates",
-                                "/updates/**"
-
+                                "/", "/status/json", "/debug-key",
+                                "/register/rasp", "/register/android", "/update", "/data",
+                                "/api/sensors/battery", "/api/sensors/config",
+                                "/api/auth/google", "/api/auth/login",
+                                "/api/auth/android/register", "/api/auth/android/activate",
+                                "/api/auth/2fa/login-verify", "/api/auth/2fa/email-verify",
+                                "/api/auth/request-password-reset", "/api/auth/reset-password",
+                                "/updates/**" // Uproszczony zapis
                         ).permitAll()
 
-                        // --- 2. ENDPOINTY CHRONIONE (Wymagają JWT) ---
-                        .requestMatchers(
-                                // <<< POPRAWKA: JAWNIE ZEZWÓL NA TE ŚCIEŻKI >>>
-                                "/data/android",
-                                "/api/gateways",
-                                "/api/gateways/share",
-                                "/api/gateways/**",
-                                "/api/sensors/**",
-                                "/api/status/**",
-                                "/api/users/**",
-                                "/api/favorites/**",
-                                "/api/user/me",
-                                "/api/user/set-password",
-                                "/api/user/change-password",
-                                "/api/auth/2fa/status",
-                                "/api/auth/2fa/setup",
-                                "/api/auth/2fa/verify",
-                                "/api/auth/2fa/disable",
-                                "/api/update/**",
-                                "/api/files/**",
-                                "/api/folders/**",
-                                "/api/retention/**"
-                        ).authenticated()
-
-                        // --- 3. ENDPOINTY ADMINA (Wymagają Roli ADMIN) ---
+                        // Endpointy Admina
                         .requestMatchers(
                                 "/api/admin/**",
                                 "/api/data/history/delete"
-                        ).hasRole("ADMIN")
+                        ).hasRole("ADMIN") // Spring Security oczekuje w bazie "ROLE_ADMIN" lub "ADMIN" w zależności od konfigu
 
-                        // Cała reszta (jeśli coś pominięto) też wymaga logowania
+                        // Reszta wymaga logowania
                         .anyRequest().authenticated()
                 )
-
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider)
-
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler)
                 )
-
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
@@ -120,9 +77,12 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("*"));
+        // Używamy skonfigurowanych domen zamiast "*"
+        configuration.setAllowedOrigins(allowedOrigins);
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
+        configuration.setAllowCredentials(true); // Ważne przy bezpiecznym CORS
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;

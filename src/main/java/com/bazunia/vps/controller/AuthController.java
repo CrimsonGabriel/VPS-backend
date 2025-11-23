@@ -3,28 +3,148 @@ package com.bazunia.vps.controller;
 import com.bazunia.vps.dto.*;
 import com.bazunia.vps.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
-import java.util.logging.Logger;
 
 @RestController
 @RequestMapping("/api/auth")
+@RequiredArgsConstructor
+@Slf4j
 public class AuthController {
 
     private final AuthService authService;
-    private final Logger controllerLogger = Logger.getLogger(AuthController.class.getName());
 
-    @Autowired
-    public AuthController(AuthService authService) {
-        this.authService = authService;
+    // --- LOGOWANIE GOOGLE (Android) ---
+    @PostMapping("/google")
+    public ResponseEntity<AuthService.AuthResponse> authGoogle(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestBody(required = false) Map<String, String> body,
+            HttpServletRequest request) {
+
+        String token = extractToken(authHeader, body);
+        if (token == null) {
+            throw new IllegalArgumentException("Brak tokena Google.");
+        }
+
+        String ip = getClientIp(request);
+        log.info("Logowanie Google z IP: {}", ip);
+
+        return ResponseEntity.ok(authService.loginWithGoogle(token, ip));
     }
 
-    // --- Funkcja pomocnicza dla IP ---
+    // --- LOGOWANIE EMAIL (Web/Android) ---
+    @PostMapping("/login")
+    public ResponseEntity<AuthService.AuthResponse> login(
+            @RequestBody LoginRequest loginRequest,
+            HttpServletRequest request) {
+
+        String ip = getClientIp(request);
+        return ResponseEntity.ok(authService.loginUser(loginRequest, ip));
+    }
+
+    // --- REJESTRACJA (Web) ---
+    @PostMapping("/register")
+    public ResponseEntity<String> register() {
+        // Usuń @RequestBody RegisterRequest registerRequest z nawiasu ^
+
+        // Jeśli React dalej tu uderza, dostanie jasny komunikat 501 Not Implemented
+        throw new UnsupportedOperationException("Ten endpoint jest wyłączony. Użyj /api/auth/android/register");
+    }
+
+    // --- REJESTRACJA (Android/Email) ---
+    @PostMapping("/android/register")
+    public ResponseEntity<Void> registerAndroidUser(@RequestBody EmailRegistrationRequest request) {
+        authService.registerAndroidUser(request);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/android/activate")
+    public ResponseEntity<String> activateAccount(@RequestParam("token") String token) {
+        authService.activateUser(token);
+        return ResponseEntity.ok("<h1>Konto aktywowane!</h1><p>Możesz się zalogować.</p>");
+    }
+
+    // --- RESET HASŁA ---
+
+    @PostMapping("/request-password-reset")
+    public ResponseEntity<?> requestPasswordReset(@RequestBody RequestPasswordResetRequest request) {
+        authService.requestPasswordReset(request.email());
+        return ResponseEntity.ok(Map.of("message", "Jeśli email istnieje, wysłano link."));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request.token(), request.newPassword());
+        return ResponseEntity.ok(Map.of("message", "Hasło zresetowane."));
+    }
+
+    // --- 2FA (Two-Factor Authentication) ---
+
+    @GetMapping("/2fa/status")
+    public ResponseEntity<TwoFaStatusResponse> getTwoFaStatus(@RequestHeader("Authorization") String authHeader) {
+        String token = extractToken(authHeader, null);
+        boolean isEnabled = authService.getTwoFaStatus(token);
+        return ResponseEntity.ok(new TwoFaStatusResponse(isEnabled));
+    }
+
+    @RequestMapping(method = {RequestMethod.GET, RequestMethod.POST}, path = "/2fa/setup")
+    public ResponseEntity<TwoFaSetupResponse> setupTwoFa(@RequestHeader("Authorization") String authHeader) {
+        String token = extractToken(authHeader, null);
+        return ResponseEntity.ok(authService.setupTwoFa(token));
+    }
+
+    @PostMapping("/2fa/verify")
+    public ResponseEntity<?> verifyTwoFa(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody TwoFaRequest body) {
+
+        String token = extractToken(authHeader, null);
+        if (authService.verifyAndEnableTwoFa(token, body.totpCode())) {
+            return ResponseEntity.ok(Map.of("success", true, "message", "2FA włączone."));
+        } else {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Błędny kod."));
+        }
+    }
+
+    @PostMapping("/2fa/disable")
+    public ResponseEntity<?> disableTwoFa(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody TwoFaRequest body) {
+
+        String token = extractToken(authHeader, null);
+        if (authService.disableTwoFa(token, body.totpCode())) {
+            return ResponseEntity.ok(Map.of("success", true, "message", "2FA wyłączone."));
+        } else {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Błędny kod."));
+        }
+    }
+
+    // Weryfikacja 2FA po logowaniu (Google)
+    @PostMapping("/2fa/login-verify")
+    public ResponseEntity<LoginResponse> loginVerifyTwoFa(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody TwoFaRequest body) {
+
+        String token = extractToken(authHeader, null);
+        return ResponseEntity.ok(authService.loginVerifyTwoFa(token, body.totpCode()));
+    }
+
+    // Weryfikacja 2FA po logowaniu (Email)
+    @PostMapping("/2fa/email-verify")
+    public ResponseEntity<LoginResponse> loginVerifyEmailTwoFa(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody TwoFaRequest body) {
+
+        String token = extractToken(authHeader, null);
+        return ResponseEntity.ok(authService.loginVerifyEmailTwoFa(token, body.totpCode()));
+    }
+
+    // --- HELPER METHODS ---
+
     private String getClientIp(HttpServletRequest request) {
         String forwardedIp = request.getHeader("X-Forwarded-For");
         if (forwardedIp == null || forwardedIp.isEmpty()) {
@@ -33,8 +153,7 @@ public class AuthController {
         return forwardedIp.split(",")[0].trim();
     }
 
-    // --- Metoda pomocnicza do wyciągania tokena (z nagłówka lub ciała) ---
-    private String extractGoogleToken(String authHeader, Map<String, String> body) {
+    private String extractToken(String authHeader, Map<String, String> body) {
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             return authHeader.substring(7);
         } else if (body != null && body.containsKey("token")) {
@@ -42,237 +161,4 @@ public class AuthController {
         }
         return null;
     }
-
-    // --- ENDPOINT LOGOWANIA GOOGLE (Android) - Pełna ścieżka: /api/auth/google ---
-    @PostMapping("/google")
-    public ResponseEntity<AuthService.AuthResponse> authGoogle(
-            @RequestHeader(value = "Authorization", required = false) String authHeader,
-            @RequestBody(required = false) Map<String, String> body,
-            HttpServletRequest request) {
-
-        String ip = getClientIp(request);
-        controllerLogger.info(">>> OTRZYMANO ŻĄDANIE /api/auth/google z IP: " + ip);
-
-        String token = extractGoogleToken(authHeader, body);
-        if (token == null) {
-            controllerLogger.warning("Brak tokena w żądaniu /api/auth/google.");
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new AuthService.AuthResponse(null, false, "Brak tokena", false));
-        }
-
-        try {
-            AuthService.AuthResponse response = authService.loginWithGoogle(token, ip);
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            controllerLogger.warning("Błąd w loginWithGoogle: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new AuthService.AuthResponse(null, false, e.getMessage(), false));
-        }
-    }
-
-    // --- ENDPOINT REJESTRACJI REACT - Pełna ścieżka: /api/auth/register ---
-    @PostMapping("/register")
-    public ResponseEntity<String> register(@RequestBody RegisterRequest registerRequest) {
-        try {
-            authService.registerUser(registerRequest);
-            return ResponseEntity.ok("Użytkownik zarejestrowany pomyślnie");
-        } catch (IllegalStateException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
-    }
-
-    // --- ENDPOINT LOGOWANIA REACT - Pełna ścieżka: /api/auth/login ---
-    @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest loginRequest, HttpServletRequest request) {
-        try {
-            String ip = getClientIp(request);
-            // ⭐️ POPRAWKA: Zmieniono typ z 'LoginResponse' na 'AuthService.AuthResponse'
-            AuthService.AuthResponse response = authService.loginUser(loginRequest, ip);
-            return ResponseEntity.ok(response);
-        } catch (AuthenticationException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "Nieprawidłowy login lub hasło."));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    // ⭐️⭐️ NOWY ENDPOINT: REJESTRACJA ANDROID ⭐️⭐️
-    // Pełna ścieżka: /api/auth/android/register
-    @PostMapping("/android/register")
-    public ResponseEntity<?> registerAndroidUser(@RequestBody EmailRegistrationRequest request) {
-        try {
-            authService.registerAndroidUser(request);
-            // 200 OK oznacza, że serwer przyjął żądanie i wysyła e-mail
-            return ResponseEntity.ok().build();
-        } catch (IllegalStateException e) {
-            // Jeśli e-mail jest zajęty (z AuthService)
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Błąd serwera podczas rejestracji");
-        }
-    }
-
-    // ⭐️⭐️ NOWY ENDPOINT: AKTYWACJA KONTA ANDROID ⭐️⭐️
-    // Pełna ścieżka: /api/auth/android/activate
-    @GetMapping("/android/activate")
-    public ResponseEntity<String> activateAccount(@RequestParam("token") String token) {
-        try {
-            authService.activateUser(token);
-            // Zwraca prostą stronę HTML z informacją o sukcesie
-            return ResponseEntity.ok("<h1>Twoje konto zostało pomyślnie aktywowane!</h1><p>Możesz teraz zalogować się w aplikacji.</p>");
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body("<h1>Błąd</h1><p>Nieprawidłowy lub wygasły link aktywacyjny.</p>");
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("<h1>Błąd</h1><p>Wystąpił wewnętrzny błąd serwera.</p>");
-        }
-    }
-
-    // ⭐️⭐️ NOWY ENDPOINT ⭐️⭐️
-    /**
-     * Publiczny endpoint do żądania resetowania hasła.
-     * Zawsze zwraca 200 OK, aby zapobiec atakom "user enumeration".
-     */
-    @PostMapping("/request-password-reset")
-    public ResponseEntity<?> requestPasswordReset(@RequestBody RequestPasswordResetRequest request) {
-        try {
-            authService.requestPasswordReset(request.email());
-
-            // Zawsze zwracaj 200 OK, nawet jeśli e-mail nie istnieje.
-            return ResponseEntity.ok(Map.of("message", "Request processed."));
-
-        } catch (Exception e) {
-            // Złap ewentualne błędy (np. błąd wysyłania e-maila)
-            controllerLogger.severe("Krytyczny błąd podczas prośby o reset hasła: " + e.getMessage());
-            // Mimo to, dla klienta udajemy, że jest OK.
-            return ResponseEntity.ok(Map.of("message", "Request processed with internal error."));
-        }
-    }
-
-
-    /**
-     * Publiczny endpoint do finalizowania resetowania hasła.
-     * Przyjmuje token i nowe hasło.
-     */
-    @PostMapping("/reset-password")
-    public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
-        try {
-            authService.resetPassword(request.token(), request.newPassword());
-
-            // Sukces - hasło zostało zmienione
-            return ResponseEntity.ok(Map.of("message", "Hasło zostało pomyślnie zresetowane."));
-
-        } catch (IllegalArgumentException e) {
-            // Błąd (np. token wygasł, zły token, za krótkie hasło)
-            // Zwracamy 400 Bad Request z wiadomością błędu
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            controllerLogger.severe("Krytyczny błąd podczas resetowania hasła: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Wystąpił wewnętrzny błąd serwera."));
-        }
-    }
-
-    // --- ENDPOINTY 2FA ---
-    // Pełna ścieżka: /api/auth/2fa/status
-    @GetMapping("/2fa/status")
-    public ResponseEntity<?> getTwoFaStatus(@RequestHeader("Authorization") String authHeader) {
-        String token = extractGoogleToken(authHeader, null);
-        if (token == null) return new ResponseEntity<>("Brak tokena", HttpStatus.UNAUTHORIZED);
-
-        try {
-            boolean isEnabled = authService.getTwoFaStatus(token);
-            return ResponseEntity.ok(new TwoFaStatusResponse(isEnabled));
-        } catch (Exception e) {
-            return new ResponseEntity<>(e.getMessage(), HttpStatus.UNAUTHORIZED);
-        }
-    }
-
-    // Pełna ścieżka: /api/auth/2fa/login-verify
-    @PostMapping("/2fa/login-verify")
-    public ResponseEntity<?> loginVerifyTwoFa(
-            @RequestHeader("Authorization") String authHeader,
-            @RequestBody TwoFaRequest body) {
-
-        String token = extractGoogleToken(authHeader, null);
-        if (token == null) return new ResponseEntity<>("Brak tokena", HttpStatus.UNAUTHORIZED);
-
-        try {
-            LoginResponse response = authService.loginVerifyTwoFa(token, body.totpCode());
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return new ResponseEntity<>(e.getMessage(), HttpStatus.UNAUTHORIZED);
-        }
-    }
-
-    // Pełna ścieżka: /api/auth/2fa/setup
-    @RequestMapping(method = {RequestMethod.GET, RequestMethod.POST}, path = "/2fa/setup")
-    public ResponseEntity<?> setupTwoFa(@RequestHeader("Authorization") String authHeader) {
-        String token = extractGoogleToken(authHeader, null);
-        if (token == null) return new ResponseEntity<>("Brak tokena", HttpStatus.UNAUTHORIZED);
-
-        try {
-            TwoFaSetupResponse response = authService.setupTwoFa(token);
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return new ResponseEntity<>(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
-        }
-    }
-
-    // Pełna ścieżka: /api/auth/2fa/verify
-    @PostMapping("/2fa/verify")
-    public ResponseEntity<?> verifyTwoFa(
-            @RequestHeader("Authorization") String authHeader,
-            @RequestBody TwoFaRequest body) {
-
-        String token = extractGoogleToken(authHeader, null);
-        if (token == null) return new ResponseEntity<>("Brak tokena", HttpStatus.UNAUTHORIZED);
-
-        try {
-            boolean success = authService.verifyAndEnableTwoFa(token, body.totpCode());
-            if (success) {
-                return ResponseEntity.ok(Map.of("success", true, "message", "2FA włączone."));
-            } else {
-                return ResponseEntity.status(400).body(Map.of("success", false, "error", "Nieprawidłowy kod 2FA."));
-            }
-        } catch (Exception e) {
-            return new ResponseEntity<>(e.getMessage(), HttpStatus.BAD_REQUEST);
-        }
-    }
-
-    // Pełna ścieżka: /api/auth/2fa/disable
-    @PostMapping("/2fa/disable")
-    public ResponseEntity<?> disableTwoFa(
-            @RequestHeader("Authorization") String authHeader,
-            @RequestBody TwoFaRequest body) {
-
-        String token = extractGoogleToken(authHeader, null);
-        if (token == null) return new ResponseEntity<>("Brak tokena", HttpStatus.UNAUTHORIZED);
-
-        try {
-            boolean success = authService.disableTwoFa(token, body.totpCode());
-            if (success) {
-                return ResponseEntity.ok(Map.of("success", true, "message", "2FA wyłączone."));
-            } else {
-                return ResponseEntity.status(400).body(Map.of("success", false, "error", "Nieprawidłowy kod 2FA."));
-            }
-        } catch (Exception e) {
-            return new ResponseEntity<>(e.getMessage(), HttpStatus.BAD_REQUEST);
-        }
-    }
-    @PostMapping("/2fa/email-verify")
-    public ResponseEntity<?> loginVerifyEmailTwoFa(
-            @RequestHeader("Authorization") String authHeader,
-            @RequestBody TwoFaRequest body) {
-
-        String token = extractGoogleToken(authHeader, null); // Twoja metoda działa też na JWT
-        if (token == null) return new ResponseEntity<>("Brak tokena", HttpStatus.UNAUTHORIZED);
-
-        try {
-            LoginResponse response = authService.loginVerifyEmailTwoFa(token, body.totpCode());
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return new ResponseEntity<>(e.getMessage(), HttpStatus.UNAUTHORIZED);
-        }
-    }
-
 }

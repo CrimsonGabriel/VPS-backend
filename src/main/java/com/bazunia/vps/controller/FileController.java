@@ -25,10 +25,13 @@ public class FileController {
     /**
      * Endpoint do wysyłania pliku: teraz jest pod ścieżką /api/files/upload
      */
-    @PostMapping("/upload") // Zmieniono z /api/files/upload na /upload
-    public ResponseEntity<String> uploadFile(@RequestParam("file") MultipartFile file) {
-        fileStorageService.storeFile(file);
-        return ResponseEntity.ok("Plik " + file.getOriginalFilename() + " został wgrany.");
+    @PostMapping("/upload")
+    public ResponseEntity<?> uploadFile(@RequestParam("file") MultipartFile file) {
+        // 1. Przypisujemy wynik do zmiennej (Warning znika!)
+        FileRecord savedFile = fileStorageService.storeFile(file);
+
+        // 2. Zwracamy ten obiekt do klienta
+        return ResponseEntity.ok(savedFile);
     }
 
     /**

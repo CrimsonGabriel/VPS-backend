@@ -1,11 +1,12 @@
 package com.bazunia.vps.service;
 
 import com.bazunia.vps.dto.SensorCreateRequest;
-import com.bazunia.vps.dto.SensorUpdateRequest; // <--- Ważny import
+import com.bazunia.vps.dto.SensorUpdateRequest;
 import com.bazunia.vps.model.Gateway;
 import com.bazunia.vps.model.Sensor;
 import com.bazunia.vps.repository.GatewayRepository;
 import com.bazunia.vps.repository.SensorRepository;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,120 +20,80 @@ public class SensorService {
 
     @Transactional
     public Sensor createSensor(SensorCreateRequest request) {
-
-        // 1. Sprawdź, czy sensor o tym ID już istnieje (Twoje wymaganie)
+        // 1. Sprawdź ID - jeśli istnieje, rzuć błąd (Conflict)
         if (sensorRepository.existsById(request.getId())) {
-            throw new RuntimeException("Sensor o ID " + request.getId() + " już istnieje.");
+            throw new IllegalStateException("Sensor o ID " + request.getId() + " już istnieje.");
         }
 
-        // 2. Znajdź bramkę (Gateway)
+        // 2. Znajdź bramkę - jeśli brak, rzuć 404 (EntityNotFoundException)
         Gateway gateway = gatewayRepository.findById(request.getGatewayId())
-                .orElseThrow(() -> new RuntimeException("Bramka (Gateway) o ID " + request.getGatewayId() + " nie istnieje."));
+                .orElseThrow(() -> new EntityNotFoundException("Bramka o ID " + request.getGatewayId() + " nie istnieje."));
 
-        // 3. (OPCJONALNIE, ALE ZALECANE) Sprawdź, czy nazwa jest unikalna w obrębie bramki
+        // 3. Unikalność nazwy
         sensorRepository.findByNameAndGatewayId(request.getName(), request.getGatewayId())
-                .ifPresent(existingSensor -> {
-                    throw new RuntimeException("Sensor o nazwie '" + request.getName() + "' już istnieje dla tej bramki.");
+                .ifPresent(existing -> {
+                    throw new IllegalStateException("Sensor o nazwie '" + request.getName() + "' już istnieje w tej bramce.");
                 });
 
-        // 4. Stwórz nowy obiekt Sensor
-        Sensor newSensor = getSensor(request, gateway);
-
-        // 5. Zapisz sensor w bazie
+        // 4. Stwórz i zapisz
+        Sensor newSensor = mapToEntity(request, gateway);
         return sensorRepository.save(newSensor);
     }
 
-    private static Sensor getSensor(SensorCreateRequest request, Gateway gateway) {
-        Sensor newSensor = new Sensor();
-
-        // Ustaw pola obowiązkowe (teraz ustawiamy ID i createdAt ręcznie)
-        newSensor.setId(request.getId());
-        newSensor.setCreatedAt(request.getCreatedAt());
-        newSensor.setGateway(gateway);
-        newSensor.setName(request.getName());
-        newSensor.setType(request.getType());
-
-        // Ustaw pola nieobowiązkowe
-        newSensor.setDescription(request.getDescription());
-        newSensor.setIntervalSeconds(request.getIntervalSeconds());
-        newSensor.setAlarmThresholdLow(request.getAlarmThresholdLow());
-        newSensor.setAlarmThresholdHigh(request.getAlarmThresholdHigh());
-        newSensor.setBatteryLevel(request.getBatteryLevel());
-        newSensor.setKeyword(request.getKeyword());
-
-        if (request.getReportingEnabled() != null) {
-            newSensor.setReportingEnabled(request.getReportingEnabled());
-        }
-        return newSensor;
-    }
-
-    // ----------------------------------------------------------------------
-    // ⭐️⭐️⭐️ NOWA METODA DO AKTUALIZACJI (PATCH) ⭐️⭐️⭐️
-    // ----------------------------------------------------------------------
-
     @Transactional
     public Sensor updateSensor(Long sensorId, SensorUpdateRequest request) {
-
-        // 1. Znajdź sensor, który chcesz zaktualizować
         Sensor sensor = sensorRepository.findById(sensorId)
-                .orElseThrow(() -> new RuntimeException("Sensor o ID " + sensorId + " nie istnieje."));
+                .orElseThrow(() -> new EntityNotFoundException("Sensor o ID " + sensorId + " nie istnieje."));
 
-        // 2. Walidacja unikalności nazwy (jeśli nazwa lub bramka się zmienia)
+        // Walidacja nazwy przy zmianie
         if (request.name() != null || request.gatewayId() != null) {
             String newName = (request.name() != null) ? request.name() : sensor.getName();
             Long newGatewayId = (request.gatewayId() != null) ? request.gatewayId() : sensor.getGateway().getId();
 
             sensorRepository.findByNameAndGatewayId(newName, newGatewayId)
-                    .ifPresent(existingSensor -> {
-                        // Upewnij się, że znaleziony sensor to nie ten sam, który edytujemy
-                        if (!existingSensor.getId().equals(sensorId)) {
-                            throw new RuntimeException("Sensor o nazwie '" + newName + "' już istnieje dla tej bramki.");
+                    .ifPresent(existing -> {
+                        if (!existing.getId().equals(sensorId)) {
+                            throw new IllegalStateException("Nazwa '" + newName + "' jest już zajęta w tej bramce.");
                         }
                     });
         }
 
-        // 3. Aktualizuj pola, jeśli nie są 'null' w żądaniu (logika PATCH)
-
-        // Zmiana bramki (Gateway)
+        // Update pól
         if (request.gatewayId() != null) {
             Gateway newGateway = gatewayRepository.findById(request.gatewayId())
-                    .orElseThrow(() -> new RuntimeException("Bramka (Gateway) o ID " + request.gatewayId() + " nie istnieje."));
+                    .orElseThrow(() -> new EntityNotFoundException("Bramka o ID " + request.gatewayId() + " nie istnieje."));
             sensor.setGateway(newGateway);
         }
+        if (request.name() != null) sensor.setName(request.name());
+        if (request.type() != null) sensor.setType(request.type());
+        if (request.createdAt() != null) sensor.setCreatedAt(request.createdAt());
+        if (request.description() != null) sensor.setDescription(request.description());
+        if (request.intervalSeconds() != null) sensor.setIntervalSeconds(request.intervalSeconds());
+        if (request.alarmThresholdLow() != null) sensor.setAlarmThresholdLow(request.alarmThresholdLow());
+        if (request.alarmThresholdHigh() != null) sensor.setAlarmThresholdHigh(request.alarmThresholdHigh());
+        if (request.batteryLevel() != null) sensor.setBatteryLevel(request.batteryLevel());
+        if (request.keyword() != null) sensor.setKeyword(request.keyword());
+        if (request.reportingEnabled() != null) sensor.setReportingEnabled(request.reportingEnabled());
 
-        // Pozostałe pola z DTO
-        if (request.name() != null) {
-            sensor.setName(request.name());
-        }
-        if (request.type() != null) {
-            sensor.setType(request.type());
-        }
-        if (request.createdAt() != null) {
-            sensor.setCreatedAt(request.createdAt());
-        }
-        if (request.description() != null) {
-            sensor.setDescription(request.description());
-        }
-        if (request.intervalSeconds() != null) {
-            sensor.setIntervalSeconds(request.intervalSeconds());
-        }
-        if (request.alarmThresholdLow() != null) {
-            sensor.setAlarmThresholdLow(request.alarmThresholdLow());
-        }
-        if (request.alarmThresholdHigh() != null) {
-            sensor.setAlarmThresholdHigh(request.alarmThresholdHigh());
-        }
-        if (request.batteryLevel() != null) {
-            sensor.setBatteryLevel(request.batteryLevel());
-        }
-        if (request.keyword() != null) {
-            sensor.setKeyword(request.keyword());
-        }
-        if (request.reportingEnabled() != null) {
-            sensor.setReportingEnabled(request.reportingEnabled());
-        }
-
-        // 4. Zapisz zmiany do bazy
         return sensorRepository.save(sensor);
+    }
+
+    private Sensor mapToEntity(SensorCreateRequest request, Gateway gateway) {
+        Sensor s = new Sensor();
+        s.setId(request.getId());
+        s.setCreatedAt(request.getCreatedAt());
+        s.setGateway(gateway);
+        s.setName(request.getName());
+        s.setType(request.getType());
+        s.setDescription(request.getDescription());
+        s.setIntervalSeconds(request.getIntervalSeconds());
+        s.setAlarmThresholdLow(request.getAlarmThresholdLow());
+        s.setAlarmThresholdHigh(request.getAlarmThresholdHigh());
+        s.setBatteryLevel(request.getBatteryLevel());
+        s.setKeyword(request.getKeyword());
+        if (request.getReportingEnabled() != null) {
+            s.setReportingEnabled(request.getReportingEnabled());
+        }
+        return s;
     }
 }

@@ -6,6 +6,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -19,6 +20,7 @@ import java.io.IOException;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j // Używamy loggera
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
@@ -45,12 +47,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             userEmail = jwtService.extractUsername(jwt);
         } catch (Exception e) {
-            // ⭐️⭐️⭐️ ZMIANA: LOGUJEMY BŁĄD ⭐️⭐️⭐️
-            System.out.println("❌ BŁĄD JWT: Nie udało się zdekodować tokena!");
-            System.out.println("❌ Powód: " + e.getMessage());
-            // e.printStackTrace(); // Odkomentuj jeśli chcesz pełny stacktrace
-
-            // Puszczamy dalej - Spring Security rzuci 401, bo Context jest pusty
+            // Logujemy błąd (nie na konsolę, tylko do logów)
+            log.warn("Nie udało się zdekodować tokena JWT: {}", e.getMessage());
             filterChain.doFilter(request, response);
             return;
         }
@@ -67,7 +65,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authToken);
             } else {
-                System.out.println("❌ BŁĄD JWT: Token nie jest poprawny dla usera " + userEmail);
+                log.warn("Token JWT jest niepoprawny dla użytkownika: {}", userEmail);
             }
         }
         filterChain.doFilter(request, response);

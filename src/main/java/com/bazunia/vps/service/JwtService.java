@@ -1,36 +1,33 @@
-// 💾 JwtService.java (DODANA METODA DEBUGUJĄCA)
-
 package com.bazunia.vps.service;
 
-// IMPORTY DLA JWT
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
-
-// IMPORT DLA SPRING SECURITY
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
-
-// IMPORTY JAVY
 import org.springframework.stereotype.Service;
+
 import java.security.Key;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
 
-// TEN IMPORT JEST KLUCZOWY
-import org.springframework.beans.factory.annotation.Value;
-
 @Service
 public class JwtService {
 
     private final String secretKey;
+    private final long jwtExpiration;
 
-    // TWORZYMY KONSTRUKTOR, KTÓRY WSTRZYKUJE KLUCZ
-    public JwtService(@Value("${jwt.secret.key}") String secretKey) {
+    // Wstrzykujemy klucz ORAZ czas wygasania z configu
+    public JwtService(
+            @Value("${jwt.secret.key}") String secretKey,
+            @Value("${jwt.expiration:3600000}") long jwtExpiration // Domyślnie 1h
+    ) {
         this.secretKey = secretKey;
+        this.jwtExpiration = jwtExpiration;
     }
 
     public String extractUsername(String token) {
@@ -60,7 +57,7 @@ public class JwtService {
                 .setClaims(extraClaims)
                 .setSubject(userDetails.getUsername())
                 .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 60))
+                .setExpiration(new Date(System.currentTimeMillis() + jwtExpiration)) // Używamy zmiennej
                 .signWith(getSignInKey(), SignatureAlgorithm.HS512)
                 .compact();
     }
@@ -92,12 +89,4 @@ public class JwtService {
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
-    // ⭐️⭐️⭐️ NOWA METODA DEBUGUJĄCA ⭐️⭐️⭐️
-    /**
-     * Zwraca klucz tajny, którego aktualnie używa ten serwis.
-     * Używane tylko przez nasz nowy endpoint /debug-key
-     */
-    public String getSecretKeyForDebug() {
-        return this.secretKey;
-    }
 }
