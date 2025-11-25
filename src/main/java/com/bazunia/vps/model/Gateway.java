@@ -8,6 +8,7 @@ import lombok.ToString;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.Set;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
@@ -17,7 +18,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 @Entity
 @Table(name = "gateways")
 // <<< POPRAWKA: Dodano @ToString z wykluczeniami, aby uniknąć pętli i CME >>>
-@ToString(exclude = {"owner", "sensors", "readings", "permissions"})
+@ToString(exclude = {"owner", "sensors", "readings", "permissions", "linkedFolders"})
 public class Gateway {
 
     @Id
@@ -55,6 +56,13 @@ public class Gateway {
     @OneToMany(mappedBy = "gateway", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<UserGatewayPermission> permissions;
 
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "folder_gateways", // Nazwa tabeli z Twojego screena SQL
+            joinColumns = @JoinColumn(name = "gateway_id"),
+            inverseJoinColumns = @JoinColumn(name = "folder_id")
+    )
+    private Set<Folder> linkedFolders = new HashSet<>();
 
     @Override
     public boolean equals(Object o) {

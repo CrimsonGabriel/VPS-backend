@@ -159,6 +159,18 @@ public class AdminController {
         List<AdminGatewayStatusDto> result = gateways.stream().map(gateway -> {
             String ownerEmail = (gateway.getOwner() != null) ? gateway.getOwner().getEmail() : "Brak właściciela";
 
+            // --- SEKCJA POPRAWKI FOLDERU START ---
+            // Zamiast gateway.getFolder(), pobieramy pierwszy folder z listy powiązanych
+            String folderName = "Brak folderu";
+            if (gateway.getLinkedFolders() != null && !gateway.getLinkedFolders().isEmpty()) {
+                // Bierzemy pierwszy folder z brzegu (zakładając, że bramka jest w jednym folderze na raz)
+                folderName = gateway.getLinkedFolders().iterator().next().getName();
+            } else if (gateway.getFolder() != null) {
+                // Fallback: jeśli relacja pusta, spróbujmy starego pola (opcjonalnie)
+                folderName = gateway.getFolder();
+            }
+            // --- SEKCJA POPRAWKI FOLDERU KONIEC ---
+
             List<AdminSensorSummaryDto> sensors = gateway.getSensors().stream()
                     .map(s -> new AdminSensorSummaryDto(
                             s.getName(), s.getType(), s.getBatteryLevel(), s.isReportingEnabled()
@@ -172,12 +184,18 @@ public class AdminController {
                         )).collect(Collectors.toList());
             }
 
-            String lastSeenStr = (gateway.getLastSeen() != null) ? gateway.getLastSeen().toString() : null;
-
+            String lastSeenStr = (gateway.getLastSeen() != null) ? gateway.getLastSeen() + "Z" : null;
+            // Tutaj podmieniamy parametr w konstruktorze: folderName zamiast gateway.getFolder()
             return new AdminGatewayStatusDto(
-                    gateway.getId(), gateway.getName(), ownerEmail, gateway.getStatus(),
-                    lastSeenStr, gateway.getDescription(), gateway.getFolder(),
-                    sensors, sharedWith
+                    gateway.getId(),
+                    gateway.getName(),
+                    ownerEmail,
+                    gateway.getStatus(),
+                    lastSeenStr,
+                    gateway.getDescription(),
+                    folderName, // <--- TUTAJ WPADACIE NAZWA Z RELACJI
+                    sensors,
+                    sharedWith
             );
         }).collect(Collectors.toList());
 
