@@ -213,7 +213,15 @@ public class AuthService {
 
     public UserDetailsResponse getUserDetails(String jwtToken) {
         User user = getUserFromJwt(jwtToken);
-        return new UserDetailsResponse(user.getId(), user.getEmail(), user.getName(), user.getRole().name());
+
+        return new UserDetailsResponse(
+                user.getId(),
+                user.getEmail(),
+                user.getName(),
+                user.getRole().name(),
+                user.isTwoFactorEnabled(),
+                user.getAvatarUrl()
+        );
     }
 
     public void requestPasswordReset(String email) {

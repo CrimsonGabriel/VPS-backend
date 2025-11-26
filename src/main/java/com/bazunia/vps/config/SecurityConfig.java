@@ -51,7 +51,8 @@ public class SecurityConfig {
                                 "/api/auth/android/register", "/api/auth/android/activate",
                                 "/api/auth/2fa/login-verify", "/api/auth/2fa/email-verify",
                                 "/api/auth/request-password-reset", "/api/auth/reset-password",
-                                "/updates/**" // Uproszczony zapis
+                                "/updates/**",
+                                "/api/files/download/**"
                         ).permitAll()
 
                         // Endpointy Admina

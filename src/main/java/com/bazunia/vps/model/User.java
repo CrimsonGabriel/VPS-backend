@@ -1,3 +1,5 @@
+// 💾 src/main/java/com/bazunia/vps/model/User.java
+
 package com.bazunia.vps.model;
 
 import jakarta.persistence.*;
@@ -17,25 +19,34 @@ import java.util.Set;
 @Setter
 @Entity
 @Table(name = "app_users")
-@ToString(exclude = {"ownedGateways", "gatewayPermissions"}) // Wyklucz kolekcje z toString()
+@ToString(exclude = {"ownedGateways", "gatewayPermissions"})
 public class User implements UserDetails {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // ... (wszystkie inne pola: email, name, password, role, 2fa, tokeny...)
     @Column(unique = true, nullable = false)
     private String email;
+
     private String name;
+
+    // ⭐️ NOWE POLE: URL do avatara użytkownika
+    private String avatarUrl;
+
     @Column
     private String password;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role = Role.USER;
+
+    // --- 2FA Fields ---
     private String twoFactorSecret;
     private boolean twoFactorEnabled = false;
     private LocalDateTime lastTwoFactorLogin;
+
+    // --- Account Status ---
     @Column(nullable = false)
     private boolean enabled = false;
     @Column(unique = true)
@@ -51,12 +62,12 @@ public class User implements UserDetails {
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<UserGatewayPermission> gatewayPermissions;
 
-
-    // --- Magia Spring Security ---
+    // --- Spring Security ---
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority("ROLE_" + this.role.name()));
     }
+
     @Override
     public String getUsername() { return this.email; }
     @Override
@@ -68,7 +79,6 @@ public class User implements UserDetails {
     @Override
     public boolean isEnabled() { return this.enabled; }
 
-    // --- POPRAWKA: Ręczne equals() i hashCode() ---
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -79,6 +89,6 @@ public class User implements UserDetails {
 
     @Override
     public int hashCode() {
-        return getClass().hashCode(); // Bezpieczne dla Hibernate
+        return getClass().hashCode();
     }
 }
