@@ -85,7 +85,7 @@ public class ApplicationConfig {
         DefaultCodeGenerator codeGenerator = new DefaultCodeGenerator(HashingAlgorithm.SHA1);
         return new DefaultCodeVerifier(codeGenerator, timeProvider);
     }
-    //BEAN DLA NAPRAWY BŁĘDU 413 (Maksymalny Rozmiar Pliku) ⭐️
+    //BEAN DLA NAPRAWY BŁĘDU 413 (Maksymalny Rozmiar Pliku)
     @Bean
     public MultipartConfigElement multipartConfigElement() {
 

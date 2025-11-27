@@ -18,7 +18,6 @@ public class AuthController {
 
     private final AuthService authService;
 
-    // --- LOGOWANIE GOOGLE (Android) ---
     @PostMapping("/google")
     public ResponseEntity<AuthService.AuthResponse> authGoogle(
             @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -36,7 +35,6 @@ public class AuthController {
         return ResponseEntity.ok(authService.loginWithGoogle(token, ip));
     }
 
-    // --- LOGOWANIE EMAIL (Web/Android) ---
     @PostMapping("/login")
     public ResponseEntity<AuthService.AuthResponse> login(
             @RequestBody LoginRequest loginRequest,
@@ -46,16 +44,11 @@ public class AuthController {
         return ResponseEntity.ok(authService.loginUser(loginRequest, ip));
     }
 
-    // --- REJESTRACJA (Web) ---
     @PostMapping("/register")
     public ResponseEntity<String> register() {
-        // Usuń @RequestBody RegisterRequest registerRequest z nawiasu ^
-
-        // Jeśli React dalej tu uderza, dostanie jasny komunikat 501 Not Implemented
         throw new UnsupportedOperationException("Ten endpoint jest wyłączony. Użyj /api/auth/android/register");
     }
 
-    // --- REJESTRACJA (Android/Email) ---
     @PostMapping("/android/register")
     public ResponseEntity<Void> registerAndroidUser(@RequestBody EmailRegistrationRequest request) {
         authService.registerAndroidUser(request);
@@ -68,8 +61,6 @@ public class AuthController {
         return ResponseEntity.ok("<h1>Konto aktywowane!</h1><p>Możesz się zalogować.</p>");
     }
 
-    // --- RESET HASŁA ---
-
     @PostMapping("/request-password-reset")
     public ResponseEntity<?> requestPasswordReset(@RequestBody RequestPasswordResetRequest request) {
         authService.requestPasswordReset(request.email());
@@ -81,8 +72,6 @@ public class AuthController {
         authService.resetPassword(request.token(), request.newPassword());
         return ResponseEntity.ok(Map.of("message", "Hasło zresetowane."));
     }
-
-    // --- 2FA (Two-Factor Authentication) ---
 
     @GetMapping("/2fa/status")
     public ResponseEntity<TwoFaStatusResponse> getTwoFaStatus(@RequestHeader("Authorization") String authHeader) {
@@ -123,7 +112,6 @@ public class AuthController {
         }
     }
 
-    // Weryfikacja 2FA po logowaniu (Google)
     @PostMapping("/2fa/login-verify")
     public ResponseEntity<LoginResponse> loginVerifyTwoFa(
             @RequestHeader("Authorization") String authHeader,
@@ -133,7 +121,6 @@ public class AuthController {
         return ResponseEntity.ok(authService.loginVerifyTwoFa(token, body.totpCode()));
     }
 
-    // Weryfikacja 2FA po logowaniu (Email)
     @PostMapping("/2fa/email-verify")
     public ResponseEntity<LoginResponse> loginVerifyEmailTwoFa(
             @RequestHeader("Authorization") String authHeader,
@@ -142,8 +129,6 @@ public class AuthController {
         String token = extractToken(authHeader, null);
         return ResponseEntity.ok(authService.loginVerifyEmailTwoFa(token, body.totpCode()));
     }
-
-    // --- HELPER METHODS ---
 
     private String getClientIp(HttpServletRequest request) {
         String forwardedIp = request.getHeader("X-Forwarded-For");

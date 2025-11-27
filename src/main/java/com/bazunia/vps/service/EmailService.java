@@ -20,7 +20,6 @@ public class EmailService {
 
     private final JavaMailSender mailSender;
 
-    // Pobieramy e-mail "od" z pliku properties, aby nie był na sztywno
     @Value("${spring.mail.username}")
     private String fromEmail;
 
@@ -91,7 +90,6 @@ public class EmailService {
 //        }
 //    }
     /**
-     * ⭐️⭐️ NOWA METODA ⭐️⭐️
      * Wysyła e-mail z linkiem do resetowania hasła.
      * @param to Adres e-mail odbiorcy.
      * @param resetLink Pełny link do zresetowania hasła.

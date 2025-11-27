@@ -25,8 +25,6 @@ public class GatewayController {
     private final UserRepository userRepository;
     private final UserGatewayPermissionRepository permissionRepository;
 
-    // --- GATEWAY CRUD ---
-
     @GetMapping("/gateways")
     public ResponseEntity<List<GatewayDto>> getGateways(Authentication authentication) {
         User user = getAuthenticatedUser(authentication);
@@ -40,7 +38,6 @@ public class GatewayController {
             Authentication authentication) {
 
         User user = getAuthenticatedUser(authentication);
-        // ExceptionHandler złapie błędy (404 lub 403)
         return ResponseEntity.ok(GatewayDto.fromEntity(gatewayService.updateGateway(id, request, user)));
     }
 
@@ -50,8 +47,6 @@ public class GatewayController {
         gatewayService.disassociateGateway(id, user);
         return ResponseEntity.noContent().build();
     }
-
-    // --- SENSOR MANAGEMENT ---
 
     @PutMapping("/sensors/{id}")
     public ResponseEntity<SensorDto> updateSensor(
@@ -76,8 +71,6 @@ public class GatewayController {
         int count = gatewayService.setGlobalSensorInterval(interval);
         return ResponseEntity.ok(Map.of("updatedCount", count));
     }
-
-    // --- SHARING (UDOSTĘPNIANIE) ---
 
     @GetMapping("/users/available-for-share")
     public ResponseEntity<List<ShareDto.UserPickDto>> getUsersForShare(Authentication authentication) {

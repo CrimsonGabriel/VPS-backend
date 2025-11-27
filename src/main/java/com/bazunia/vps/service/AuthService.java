@@ -22,7 +22,7 @@ import java.util.UUID;
 import java.util.logging.Logger;
 
 @Service
-@RequiredArgsConstructor // Lombok załatwia konstruktor
+@RequiredArgsConstructor
 public class AuthService {
 
     private final UserRepository userRepository;
@@ -31,9 +31,8 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final EmailService emailService;
-    private final TwoFactorService twoFactorService; // Wstrzykujemy nowy serwis
+    private final TwoFactorService twoFactorService;
 
-    // Pobieramy z application.properties!
     @Value("${app.google.client-id}")
     private String googleClientId;
 
@@ -43,8 +42,6 @@ public class AuthService {
     private static final Logger logger = Logger.getLogger(AuthService.class.getName());
 
     public record AuthResponse(String jwt, boolean requires2FA, String message, boolean requiresPasswordSetup) {}
-
-    // --- GOOGLE AUTH ---
 
     private User verifyGoogleTokenAndGetUser(String googleToken) throws Exception {
         GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new GsonFactory())
@@ -92,8 +89,6 @@ public class AuthService {
         }
     }
 
-    // --- STANDARD LOGIN ---
-
     public AuthResponse loginUser(LoginRequest request, String ipAddress) {
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(request.email(), request.password())
@@ -112,8 +107,6 @@ public class AuthService {
             return new AuthResponse(jwt, false, "Zalogowano przez Email", false);
         }
     }
-
-    // --- 2FA DELEGATION (Korzystamy z TwoFactorService) ---
 
     public boolean getTwoFaStatus(String jwtToken) {
         return getUserFromJwt(jwtToken).isTwoFactorEnabled();
@@ -152,7 +145,7 @@ public class AuthService {
 
     private LoginResponse finalize2FaLogin(User user, String totpCode) {
         if (twoFactorService.validateCode(user, totpCode)) {
-            twoFactorService.updateLastLogin(user); // Zapisujemy czas logowania w serwisie 2FA
+            twoFactorService.updateLastLogin(user);
 
             boolean requiresPasswordSetup = (user.getPassword() == null);
             String jwt = jwtService.generateToken(user);
@@ -179,7 +172,6 @@ public class AuthService {
         user.setActivationToken(token);
         userRepository.save(user);
 
-        // Używamy zmiennej frontendUrl zamiast hardcodu
         String activationLink = frontendUrl + "/activate?token=" + token;
         emailService.sendActivationEmail(user.getEmail(), activationLink);
     }

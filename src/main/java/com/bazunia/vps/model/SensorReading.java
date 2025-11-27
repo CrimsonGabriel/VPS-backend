@@ -1,6 +1,6 @@
 package com.bazunia.vps.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnore; // <<< DODAJ TEN IMPORT
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -16,12 +16,12 @@ public class SensorReading {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @JsonIgnore // <<< DODAJ TĘ ADNOTACJĘ
+    @JsonIgnore
     @ManyToOne
     @JoinColumn(name = "gateway_id", nullable = false)
     private Gateway gateway;
 
-    @JsonIgnore // <<< DODAJ TĘ ADNOTACJĘ
+    @JsonIgnore
     @ManyToOne
     @JoinColumn(name = "sensor_id", nullable = false)
     private Sensor sensor;

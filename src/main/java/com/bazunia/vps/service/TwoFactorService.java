@@ -84,7 +84,6 @@ public class TwoFactorService {
 
     public boolean is2FaRequired(User user) {
         if (user.isTwoFactorEnabled()) {
-            // Wymagaj 2FA jeśli nigdy się nie logował 2FA lub minęło 5 minut
             return user.getLastTwoFactorLogin() == null ||
                     user.getLastTwoFactorLogin().isBefore(LocalDateTime.now().minusMinutes(5));
         }

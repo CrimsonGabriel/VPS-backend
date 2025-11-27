@@ -16,7 +16,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 @Setter
 @Entity
 @Table(name = "sensors")
-@ToString(exclude = {"gateway", "readings", "folders"}) // ⭐️ DODANO 'folders'
+@ToString(exclude = {"gateway", "readings", "folders"})
 public class Sensor {
 
     @Id
@@ -49,7 +49,7 @@ public class Sensor {
     @OneToMany(mappedBy = "sensor", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<SensorReading> readings;
     @ManyToMany(mappedBy = "sensors")
-    @JsonIgnore // Zapobiegaj pętlom serializacji
+    @JsonIgnore
     private Set<Folder> folders = new HashSet<>();
 
     @Override

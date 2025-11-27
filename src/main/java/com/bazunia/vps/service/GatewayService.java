@@ -27,8 +27,6 @@ public class GatewayService {
     private final SensorRepository sensorRepository;
     private final UserGatewayPermissionRepository permissionRepository;
 
-    // --- GATEWAY ---
-
     @Transactional(readOnly = true)
     public List<GatewayDto> getGatewaysForUser(User user) {
         return gatewayRepository.findAllOwnedAndShared(user.getId()).stream()
@@ -60,7 +58,6 @@ public class GatewayService {
         gatewayRepository.save(gateway);
     }
 
-    // --- SENSOR ---
 
     @Transactional
     public Sensor updateSensor(Long sensorId, SensorUpdateRequest request, User user) {
@@ -96,8 +93,6 @@ public class GatewayService {
         if (interval == null || interval <= 0) interval = 60;
         return sensorRepository.setGlobalInterval(interval);
     }
-
-    // --- SECURITY HELPER ---
 
     private void validateWriteAccess(Gateway gateway, User user) {
         if (Objects.equals(gateway.getOwner().getId(), user.getId())) return;

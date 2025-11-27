@@ -1,4 +1,3 @@
-// 💾 Role.java
 package com.bazunia.vps.model;
 
 import lombok.Getter;

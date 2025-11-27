@@ -1,5 +1,3 @@
-// 💾 src/main/java/com/bazunia/vps/model/User.java
-
 package com.bazunia.vps.model;
 
 import jakarta.persistence.*;
@@ -28,10 +26,7 @@ public class User implements UserDetails {
 
     @Column(unique = true, nullable = false)
     private String email;
-
     private String name;
-
-    // ⭐️ NOWE POLE: URL do avatara użytkownika
     private String avatarUrl;
 
     @Column
@@ -41,12 +36,10 @@ public class User implements UserDetails {
     @Column(nullable = false)
     private Role role = Role.USER;
 
-    // --- 2FA Fields ---
     private String twoFactorSecret;
     private boolean twoFactorEnabled = false;
     private LocalDateTime lastTwoFactorLogin;
 
-    // --- Account Status ---
     @Column(nullable = false)
     private boolean enabled = false;
     @Column(unique = true)
@@ -55,14 +48,12 @@ public class User implements UserDetails {
     private String passwordResetToken;
     private LocalDateTime passwordResetTokenExpiry;
 
-    // --- Relacje ---
     @OneToMany(mappedBy = "owner", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<Gateway> ownedGateways;
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<UserGatewayPermission> gatewayPermissions;
 
-    // --- Spring Security ---
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority("ROLE_" + this.role.name()));

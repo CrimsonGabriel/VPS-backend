@@ -39,7 +39,6 @@ public class DashboardController {
                 User::getEmail, u -> new TwoFaStatusDto(u.isTwoFactorEnabled())
         ));
 
-        // Tuta przekazujemy brakujący parametr: statusService.getUniqueRpiIPs()
         return new StatusResponse(
                 statusService.getLastReportText(),
                 statusService.getRegisteredRPiIp(),
@@ -59,8 +58,6 @@ public class DashboardController {
     public ResponseEntity<RiskReportDto> getRiskReport(Authentication authentication) {
         return ResponseEntity.ok(monitoringService.generateRiskReport(getAuthenticatedUser(authentication)));
     }
-
-    // --- ANDROID / APP DASHBOARD ---
 
     @GetMapping("/data/android")
     public ResponseEntity<Map<String, List<SensorReadingResponseDto>>> getSensorData() {
@@ -82,8 +79,6 @@ public class DashboardController {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
-
-    // --- RETENTION REQUESTS ---
 
     @PostMapping("/api/retention/request")
     public ResponseEntity<?> requestRetentionChange(@RequestBody Map<String, String> request) {
@@ -107,8 +102,6 @@ public class DashboardController {
 
         return ResponseEntity.ok(Map.of("status", status, "currentDays", currentDays, "currentSize", currentSize));
     }
-
-    // --- HISTORY CLEANUP ---
 
     @DeleteMapping("/api/data/history/delete")
     public ResponseEntity<Map<String, Boolean>> deleteSensorHistory() {

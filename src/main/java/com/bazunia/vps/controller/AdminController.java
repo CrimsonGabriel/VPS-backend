@@ -31,11 +31,9 @@ public class AdminController {
     private final SystemSettingRepository systemSettingRepository;
     private final GatewayRepository gatewayRepository;
 
-    // --- 2. ZARZĄDZANIE AKTUALIZACJAMI ---
 
     @PostMapping("/updates")
     public ResponseEntity<?> createUpdate(@RequestBody UpdateDtos.CreateUpdateRequest request) {
-        // Wyjątek poleci do Handlera
         return ResponseEntity.ok(updateService.createUpdate(request));
     }
 
@@ -50,7 +48,6 @@ public class AdminController {
         return ResponseEntity.ok(Map.of("message", "Update resent to PENDING status."));
     }
 
-    // Helper dla Frontendu
     @GetMapping("/users/{userId}/gateways")
     public ResponseEntity<List<GatewayDto>> getUserGateways(@PathVariable Long userId) {
         User user = userRepository.findById(userId)
@@ -75,8 +72,6 @@ public class AdminController {
         return ResponseEntity.ok(dtos);
     }
 
-    // --- 3. ZARZĄDZANIE SENSORAMI (Admin) ---
-
     @PostMapping("/sensors")
     public ResponseEntity<?> createSensor(@Valid @RequestBody SensorCreateRequest request) {
         Sensor savedSensor = sensorService.createSensor(request);
@@ -90,8 +85,6 @@ public class AdminController {
         Sensor updatedSensor = sensorService.updateSensor(id, request);
         return ResponseEntity.ok(SensorDto.fromEntity(updatedSensor));
     }
-
-    // --- 5. KONFIGURACJA HISTORII (Retention) ---
 
     @GetMapping("/retention")
     public ResponseEntity<RetentionConfigDto> getRetentionSettings() {
@@ -149,8 +142,6 @@ public class AdminController {
         return ResponseEntity.ok(Map.of("message", "Decyzja zapisana: " + decision));
     }
 
-    // --- 6. STATUS BRAMEK (Admin View) ---
-
     @GetMapping("/gateways/status")
     @Transactional
     public ResponseEntity<List<AdminGatewayStatusDto>> getAllGatewaysStatus() {
@@ -159,17 +150,12 @@ public class AdminController {
         List<AdminGatewayStatusDto> result = gateways.stream().map(gateway -> {
             String ownerEmail = (gateway.getOwner() != null) ? gateway.getOwner().getEmail() : "Brak właściciela";
 
-            // --- SEKCJA POPRAWKI FOLDERU START ---
-            // Zamiast gateway.getFolder(), pobieramy pierwszy folder z listy powiązanych
             String folderName = "Brak folderu";
             if (gateway.getLinkedFolders() != null && !gateway.getLinkedFolders().isEmpty()) {
-                // Bierzemy pierwszy folder z brzegu (zakładając, że bramka jest w jednym folderze na raz)
                 folderName = gateway.getLinkedFolders().iterator().next().getName();
             } else if (gateway.getFolder() != null) {
-                // Fallback: jeśli relacja pusta, spróbujmy starego pola (opcjonalnie)
                 folderName = gateway.getFolder();
             }
-            // --- SEKCJA POPRAWKI FOLDERU KONIEC ---
 
             List<AdminSensorSummaryDto> sensors = gateway.getSensors().stream()
                     .map(s -> new AdminSensorSummaryDto(
@@ -185,7 +171,6 @@ public class AdminController {
             }
 
             String lastSeenStr = (gateway.getLastSeen() != null) ? gateway.getLastSeen() + "Z" : null;
-            // Tutaj podmieniamy parametr w konstruktorze: folderName zamiast gateway.getFolder()
             return new AdminGatewayStatusDto(
                     gateway.getId(),
                     gateway.getName(),
@@ -193,12 +178,11 @@ public class AdminController {
                     gateway.getStatus(),
                     lastSeenStr,
                     gateway.getDescription(),
-                    folderName, // <--- TUTAJ WPADACIE NAZWA Z RELACJI
+                    folderName,
                     sensors,
                     sharedWith
             );
         }).collect(Collectors.toList());
-
         return ResponseEntity.ok(result);
     }
 }

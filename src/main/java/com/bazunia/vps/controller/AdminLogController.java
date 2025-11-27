@@ -22,7 +22,6 @@ public class AdminLogController {
 
     @GetMapping
     public ResponseEntity<List<String>> getAppLogs(@RequestParam(defaultValue = "out") String type) {
-        // Logika bez zmian, tylko przeniesiona
         String logFilePath = switch (type) {
             case "error" -> "/home/ubuntu/.pm2/logs/bazunia-app-spring-error.log";
             case "server" -> "server.log";

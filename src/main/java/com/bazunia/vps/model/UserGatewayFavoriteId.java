@@ -13,7 +13,6 @@ public class UserGatewayFavoriteId implements Serializable {
     @Column(name = "gateway_id")
     private Long gatewayId;
 
-    // Konstruktory, equals() i hashCode() są niezbędne
     public UserGatewayFavoriteId() {}
     public UserGatewayFavoriteId(Long userId, Long gatewayId) {
         this.userId = userId;

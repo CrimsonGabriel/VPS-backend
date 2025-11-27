@@ -27,10 +27,7 @@ public class FileController {
      */
     @PostMapping("/upload")
     public ResponseEntity<?> uploadFile(@RequestParam("file") MultipartFile file) {
-        // 1. Przypisujemy wynik do zmiennej (Warning znika!)
         FileRecord savedFile = fileStorageService.storeFile(file);
-
-        // 2. Zwracamy ten obiekt do klienta
         return ResponseEntity.ok(savedFile);
     }
 
@@ -49,8 +46,6 @@ public class FileController {
     @GetMapping("/download/{id}") // Zmieniono z /api/files/download/{id} na /download/{id}
     public ResponseEntity<Resource> downloadFile(@PathVariable Long id) {
         Resource resource = fileStorageService.loadFileAsResource(id);
-
-        // Znajdź oryginalną nazwę pliku z bazy (aby przeglądarka wiedziała jak go zapisać)
         String originalFileName = fileStorageService.getAllFiles().stream()
                 .filter(f -> f.getId().equals(id))
                 .findFirst()
@@ -68,7 +63,6 @@ public class FileController {
             fileStorageService.deleteFile(id);
             return ResponseEntity.noContent().build(); // 204 No Content - Sukces
         } catch (RuntimeException e) {
-            // Można rozszerzyć o lepszą obsługę błędów (np. 404)
             return ResponseEntity.status(404).build();
         }
     }

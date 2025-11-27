@@ -36,7 +36,6 @@ public class UpdateService {
 
         update = systemUpdateRepository.save(update);
 
-        // 2. Rozdziel logikę w zależności od celu
         switch (request.getTargetType()) {
             case APP -> createAssignment(update, request.getTargetUserId(), request.getTargetUserId());
 
@@ -91,7 +90,6 @@ public class UpdateService {
             dto.setTargetType(u.getTargetType());
             dto.setCreatedAt(u.getCreatedAt());
 
-            // Pobieramy przypisania dla tej aktualizacji
             List<UpdateAssignment> assignments = assignmentRepository.findBySystemUpdateId(u.getId());
 
             List<UpdateDtos.AssignmentDto> assignmentDtos = assignments.stream().map(a -> {

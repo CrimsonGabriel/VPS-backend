@@ -37,8 +37,6 @@ public class RetentionService {
     @Transactional
     public void performAutoCleanup() {
         log.info("Rozpoczynanie automatycznego czyszczenia historii...");
-
-        // 1. Czyszczenie po czasie (Dni)
         String daysStr = getSettingValue("RETENTION_DAYS");
         if (daysStr != null && !daysStr.isEmpty()) {
             try {
@@ -58,7 +56,6 @@ public class RetentionService {
             }
         }
 
-        // 2. Czyszczenie po ilości (Max Rekordów)
         String maxRecStr = getSettingValue("RETENTION_MAX_RECORDS");
         if (maxRecStr != null && !maxRecStr.isEmpty()) {
             try {

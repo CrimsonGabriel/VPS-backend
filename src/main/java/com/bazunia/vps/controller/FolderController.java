@@ -22,8 +22,6 @@ public class FolderController {
         return (User) authentication.getPrincipal();
     }
 
-    // --- FOLDERY ---
-
     @GetMapping("/folders")
     public ResponseEntity<List<FolderDto>> getFolders(Authentication authentication) {
         return ResponseEntity.ok(folderService.getFoldersForUser(getAuthenticatedUser(authentication)));
@@ -45,8 +43,6 @@ public class FolderController {
         folderService.deleteFolder(id, getAuthenticatedUser(authentication));
         return ResponseEntity.noContent().build();
     }
-
-    // --- ZAWARTOŚĆ FOLDERÓW ---
 
     @PostMapping("/folders/{folderId}/gateways")
     public ResponseEntity<Void> addGatewayToFolder(@PathVariable Long folderId, @RequestBody FolderMembershipRequest request, Authentication authentication) {
@@ -71,8 +67,6 @@ public class FolderController {
         folderService.removeSensorFromFolder(folderId, sensorId, getAuthenticatedUser(authentication));
         return ResponseEntity.noContent().build();
     }
-
-    // --- ULUBIONE ---
 
     @GetMapping("/favorites/gateways")
     public ResponseEntity<List<GatewayDto>> getFavoriteGateways(Authentication authentication) {

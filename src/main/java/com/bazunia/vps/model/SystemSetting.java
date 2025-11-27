@@ -9,13 +9,13 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Table(name = "system_settings") // Bezpieczna nazwa tabeli
+@Table(name = "system_settings")
 public class SystemSetting {
 
     @Id
-    @Column(name = "setting_key") // Zmiana nazwy kolumny (key to też keyword)
+    @Column(name = "setting_key")
     private String keyName;
 
-    @Column(name = "setting_value") // Zmiana nazwy kolumny (value to keyword)
+    @Column(name = "setting_value")
     private String value;
 }

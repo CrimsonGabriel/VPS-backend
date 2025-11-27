@@ -21,10 +21,9 @@ public class JwtService {
     private final String secretKey;
     private final long jwtExpiration;
 
-    // Wstrzykujemy klucz ORAZ czas wygasania z configu
     public JwtService(
             @Value("${jwt.secret.key}") String secretKey,
-            @Value("${jwt.expiration:3600000}") long jwtExpiration // Domyślnie 1h
+            @Value("${jwt.expiration:3600000}") long jwtExpiration
     ) {
         this.secretKey = secretKey;
         this.jwtExpiration = jwtExpiration;

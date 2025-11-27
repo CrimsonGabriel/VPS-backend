@@ -11,7 +11,7 @@ public record FolderDto(
         String name,
         String color,
         Set<Long> gatewayIds,
-        Set<Long> sensorIds // ⭐️ NOWE POLE (Krok 3)
+        Set<Long> sensorIds
 
 ) {
 

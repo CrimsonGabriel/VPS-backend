@@ -20,7 +20,7 @@ import java.io.IOException;
 
 @Component
 @RequiredArgsConstructor
-@Slf4j // Używamy loggera
+@Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
@@ -47,7 +47,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             userEmail = jwtService.extractUsername(jwt);
         } catch (Exception e) {
-            // Logujemy błąd (nie na konsolę, tylko do logów)
             log.warn("Nie udało się zdekodować tokena JWT: {}", e.getMessage());
             filterChain.doFilter(request, response);
             return;

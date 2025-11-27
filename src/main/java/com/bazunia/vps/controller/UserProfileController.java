@@ -1,5 +1,3 @@
-// 💾 src/main/java/com/bazunia/vps/controller/UserProfileController.java
-
 package com.bazunia.vps.controller;
 
 import com.bazunia.vps.dto.ChangePasswordRequest;
@@ -27,18 +25,15 @@ import java.util.Map;
 public class UserProfileController {
 
     private final AuthService authService;
-    private final UserRepository userRepository;     // Potrzebne do zapisu User
-    private final FileStorageService fileStorageService; // Potrzebne do zapisu Avatara
+    private final UserRepository userRepository;
+    private final FileStorageService fileStorageService;
 
-    // --- POBIERANIE DANYCH ---
     @GetMapping("/me")
     public ResponseEntity<?> getUserDetails(@RequestHeader("Authorization") String authHeader) {
         try {
             String email = extractEmailFromToken(authHeader);
             User user = userRepository.findByEmail(email)
                     .orElseThrow(() -> new UsernameNotFoundException("Nie znaleziono użytkownika"));
-
-            // Budujemy odpowiedź ręcznie lub przez mapper
             UserDetailsResponse response = new UserDetailsResponse(
                     user.getId(),
                     user.getEmail(),
@@ -53,7 +48,6 @@ public class UserProfileController {
         }
     }
 
-    // --- AKTUALIZACJA DANYCH (Np. Imię) ---
     @PutMapping("/me")
     public ResponseEntity<?> updateUserProfile(
             @RequestHeader("Authorization") String authHeader,
@@ -66,7 +60,6 @@ public class UserProfileController {
             if (request.name() != null && !request.name().isBlank()) {
                 user.setName(request.name());
             }
-
             userRepository.save(user);
             return ResponseEntity.ok(Map.of("message", "Profil zaktualizowany pomyślnie."));
         } catch (Exception e) {
@@ -74,7 +67,6 @@ public class UserProfileController {
         }
     }
 
-    // --- UPLOAD AVATARA ---
     @PostMapping("/avatar")
     public ResponseEntity<?> uploadAvatar(
             @RequestHeader("Authorization") String authHeader,
@@ -83,18 +75,12 @@ public class UserProfileController {
             String email = extractEmailFromToken(authHeader);
             User user = userRepository.findByEmail(email)
                     .orElseThrow(() -> new UsernameNotFoundException("Nie znaleziono użytkownika"));
-
-            // 1. Zapisz plik fizycznie (używając istniejącego serwisu)
             FileRecord savedFile = fileStorageService.storeFile(file);
-
-            // 2. Wygeneruj URL do pobrania tego pliku
-            // Zakładamy, że FileController obsługuje /api/files/download/{id}
             String fileDownloadUri = ServletUriComponentsBuilder.fromCurrentContextPath()
                     .path("/api/files/download/")
                     .path(savedFile.getId().toString())
                     .toUriString();
 
-            // 3. Zaktualizuj użytkownika
             user.setAvatarUrl(fileDownloadUri);
             userRepository.save(user);
 
@@ -109,14 +95,11 @@ public class UserProfileController {
         }
     }
 
-    // --- ZMIANA HASŁA (Bez zmian logicznych) ---
     @PostMapping("/change-password")
     public ResponseEntity<?> changeUserPassword(
             @RequestHeader("Authorization") String authHeader,
             @RequestBody ChangePasswordRequest request) {
         try {
-            // Uwaga: AuthService.changeUserPassword wymaga tokena (String), a nie emaila,
-            // więc tutaj przekazujemy czysty token bez "Bearer "
             String token = extractTokenRaw(authHeader);
             authService.changeUserPassword(token, request.currentPassword(), request.newPassword());
             return ResponseEntity.ok(Map.of("message", "Hasło zmienione pomyślnie."));
@@ -140,7 +123,6 @@ public class UserProfileController {
         }
     }
 
-    // --- HELPERY ---
     private String extractTokenRaw(String authHeader) {
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             return authHeader.substring(7);
@@ -150,11 +132,6 @@ public class UserProfileController {
 
     private String extractEmailFromToken(String authHeader) {
         String token = extractTokenRaw(authHeader);
-        // Pobieramy email z tokena za pomocą metody w AuthService lub JwtService
-        // Tutaj zakładam, że AuthService ma metodę pomocniczą lub użyjemy JwtService bezpośrednio.
-        // Dla uproszczenia wywołamy extractUsername z JwtService (musisz wstrzyknąć JwtService jeśli AuthService tego nie eksponuje)
-        // Ale bezpieczniej: AuthService zazwyczaj ma metodę getUserDetails(token).
-
         return authService.getUserDetails(token).email();
     }
 }

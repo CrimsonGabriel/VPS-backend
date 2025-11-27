@@ -15,10 +15,10 @@ public class FileRecord {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String originalFileName; // np. "mój-raport.pdf"
-    private String storagePath;      // np. "/var/uploads/12345-moj-raport.pdf"
-    private String contentType;      // np. "application/pdf"
-    private long size;               // np. 102400 (w bajtach)
+    private String originalFileName;
+    private String storagePath;
+    private String contentType;
+    private long size;
 
     public FileRecord(String originalFileName, String storagePath, String contentType, long size) {
         this.originalFileName = originalFileName;

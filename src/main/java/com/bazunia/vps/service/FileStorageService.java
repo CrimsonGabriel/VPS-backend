@@ -28,7 +28,6 @@ public class FileStorageService {
     @Autowired
     public FileStorageService(@Value("${file.upload-dir}") String uploadDir, FileRecordRepository fileRecordRepository) {
         this.fileRecordRepository = fileRecordRepository;
-        // Normalizujemy ścieżkę absolutną
         this.fileStorageLocation = Paths.get(uploadDir).toAbsolutePath().normalize();
 
         try {
@@ -47,23 +46,18 @@ public class FileStorageService {
             throw new SecurityException("Nieprawidłowa nazwa pliku: " + rawFileName);
         }
 
-        // 1. Bezpieczna nazwa pliku
         String originalFileName = StringUtils.cleanPath(rawFileName);
         String uniqueFileName = UUID.randomUUID() + "_" + originalFileName;
 
         try {
-            // 2. Ścieżka zapisu na dysku
             Path targetLocation = this.fileStorageLocation.resolve(uniqueFileName).normalize();
 
-            // 🛡️ BEZPIECZEŃSTWO: Sprawdź, czy ścieżka nie wychodzi poza folder uploads!
             if (!targetLocation.startsWith(this.fileStorageLocation)) {
                 throw new SecurityException("Próba zapisu pliku poza dozwolonym katalogiem!");
             }
 
-            // 3. Zapis pliku na dysk
             Files.copy(file.getInputStream(), targetLocation, StandardCopyOption.REPLACE_EXISTING);
 
-            // 4. Zapisz metadane w bazie
             FileRecord fileRecord = new FileRecord(
                     originalFileName,
                     targetLocation.toString(),
@@ -112,7 +106,6 @@ public class FileStorageService {
             Files.deleteIfExists(filePath);
             fileRecordRepository.delete(fileRecord);
         } catch (IOException ex) {
-            // Jeśli nie uda się usunąć z dysku, rzucamy błąd, żeby admin wiedział (lub logujemy i usuwamy z bazy)
             throw new RuntimeException("Nie udało się usunąć pliku z dysku.", ex);
         }
     }

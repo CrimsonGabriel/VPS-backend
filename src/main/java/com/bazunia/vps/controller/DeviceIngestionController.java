@@ -25,8 +25,6 @@ public class DeviceIngestionController {
     private final SensorRepository sensorRepository;
     private final SensorReadingRepository sensorReadingRepository;
 
-    // --- REJESTRACJA IP (RPi / Android) ---
-
     @PostMapping("/register/rasp")
     public ResponseEntity<String> registerRaspberryPiIp(@RequestBody RegistrationRequest request, HttpServletRequest servletRequest) {
         if (!this.secretPassword.equals(request.password())) {
@@ -48,8 +46,6 @@ public class DeviceIngestionController {
         return ResponseEntity.ok("OK");
     }
 
-    // --- ODBIÓR DANYCH (Sensory, Baterie, Konfig) ---
-
     @PostMapping("/data")
     public ResponseEntity<String> postData(@RequestBody SimpleDataRequest data, HttpServletRequest request) {
         if (!this.secretPassword.equals(data.password())) {
@@ -59,7 +55,6 @@ public class DeviceIngestionController {
         statusService.updateRpiIp(clientIp);
         statusService.addRpiIp(clientIp);
 
-        // Zero try-catch. Jak nie znajdzie sensora -> Exception -> GlobalHandler -> 404
         for (var sensorDto : data.sensors()) {
             Long gatewayId = Long.parseLong(sensorDto.gateway_id());
             Long sensorId = Long.parseLong(sensorDto.sensor_id());
@@ -116,7 +111,6 @@ public class DeviceIngestionController {
         if (!this.secretPassword.equals(request.password())) {
             return new ResponseEntity<>("Nieprawidłowe hasło", HttpStatus.UNAUTHORIZED);
         }
-        // Czyste wywołanie
         return ResponseEntity.ok(gatewayService.getAllSensorConfigs());
     }
 

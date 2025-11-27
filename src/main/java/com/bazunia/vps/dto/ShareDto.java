@@ -7,17 +7,15 @@ import lombok.NoArgsConstructor;
 
 public class ShareDto {
 
-    // 1. Prośba o udostępnienie bramki
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
     public static class ShareGatewayRequest {
         private Long gatewayId;
-        private Long targetUserId; // ID użytkownika, któremu udostępniamy
-        private PermissionLevel permissionLevel; // VIEW lub FULL_ACCESS
+        private Long targetUserId;
+        private PermissionLevel permissionLevel;
     }
 
-    // 2. Obiekt do wyświetlania listy osób, którym udostępniono bramkę
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
@@ -27,7 +25,6 @@ public class ShareDto {
         private PermissionLevel permissionLevel;
     }
 
-    // 3. Obiekt do picklisty (wybór użytkownika do udostępnienia)
     @Data
     @NoArgsConstructor
     @AllArgsConstructor

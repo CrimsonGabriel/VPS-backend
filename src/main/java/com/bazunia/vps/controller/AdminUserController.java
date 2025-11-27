@@ -41,7 +41,6 @@ public class AdminUserController {
     @PostMapping
     public ResponseEntity<AdminUserDto> createUser(@RequestBody AdminUserRequest request) {
         if (userRepository.findByEmail(request.email()).isPresent()) {
-            // To złapie GlobalHandler jako 409 Conflict
             throw new IllegalStateException("Email jest już zajęty.");
         }
         if (request.password() == null || request.password().isEmpty()) {
@@ -84,7 +83,6 @@ public class AdminUserController {
                 .orElseThrow(() -> new EntityNotFoundException("Nie znaleziono użytkownika do usunięcia"));
 
         if (userToDelete.getEmail().equals("admin")) {
-            // Rzuci 403 w Handlerze
             throw new org.springframework.security.access.AccessDeniedException("Nie można usunąć głównego admina.");
         }
 

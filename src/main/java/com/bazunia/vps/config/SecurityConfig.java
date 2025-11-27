@@ -31,7 +31,6 @@ public class SecurityConfig {
     private final AuthenticationEntryPoint authenticationEntryPoint;
     private final AccessDeniedHandler accessDeniedHandler;
 
-    // Pobieramy dozwolone origin z pliku properties (domyślnie localhost)
     @Value("${app.cors.allowed-origins:http://localhost:5173,http://localhost:3000}")
     private List<String> allowedOrigins;
 
@@ -59,9 +58,7 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/admin/**",
                                 "/api/data/history/delete"
-                        ).hasRole("ADMIN") // Spring Security oczekuje w bazie "ROLE_ADMIN" lub "ADMIN" w zależności od konfigu
-
-                        // Reszta wymaga logowania
+                        ).hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -78,11 +75,10 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // Używamy skonfigurowanych domen zamiast "*"
         configuration.setAllowedOrigins(allowedOrigins);
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
-        configuration.setAllowCredentials(true); // Ważne przy bezpiecznym CORS
+        configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

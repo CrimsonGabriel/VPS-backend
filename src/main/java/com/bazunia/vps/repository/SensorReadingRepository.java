@@ -29,7 +29,5 @@ public interface SensorReadingRepository extends JpaRepository<SensorReading, Lo
 
     long count();
 
-    // ⭐️ NOWA METODA (Naprawa błędu logicznego) ⭐️
-    // Zwraca Optional, dzięki czemu metody .isPresent() i .get() zadziałają w Service
     Optional<SensorReading> findTopBySensorOrderByTimestampDesc(Sensor sensor);
 }

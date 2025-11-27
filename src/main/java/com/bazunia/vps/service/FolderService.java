@@ -27,8 +27,6 @@ public class FolderService {
     private final UserFavoriteGatewayRepository favoriteGatewayRepository;
     private final UserFavoriteSensorRepository favoriteSensorRepository;
 
-    // --- LOGIKA FOLDERÓW ---
-
     public List<FolderDto> getFoldersForUser(User user) {
         return folderRepository.findByOwnerWithGatewaysAndSensors(user).stream()
                 .map(FolderDto::fromEntity)
@@ -63,7 +61,6 @@ public class FolderService {
         Gateway gateway = gatewayRepository.findById(gatewayId)
                 .orElseThrow(() -> new EntityNotFoundException("Gateway not found"));
 
-        // ✅ POPRAWIONE SPRAWDZANIE UPRAWNIEŃ
         validateAccessToGateway(user, gateway);
 
         folder.getGateways().add(gateway);
@@ -74,7 +71,6 @@ public class FolderService {
         Folder folder = folderRepository.findByIdAndOwnerWithGatewaysAndSensors(folderId, user)
                 .orElseThrow(() -> new EntityNotFoundException("Folder not found"));
 
-        // Tu nie musimy sprawdzać dostępu do bramki, bo user usuwa ją ze SWOJEGO folderu
         Gateway gateway = gatewayRepository.findById(gatewayId)
                 .orElseThrow(() -> new EntityNotFoundException("Gateway not found"));
 
@@ -89,7 +85,6 @@ public class FolderService {
         Sensor sensor = sensorRepository.findById(sensorId)
                 .orElseThrow(() -> new EntityNotFoundException("Sensor not found"));
 
-        // ✅ POPRAWIONE SPRAWDZANIE UPRAWNIEŃ (Przez bramkę rodzica)
         validateAccessToGateway(user, sensor.getGateway());
 
         folder.getSensors().add(sensor);
@@ -106,8 +101,6 @@ public class FolderService {
         folder.getSensors().remove(sensor);
         folderRepository.save(folder);
     }
-
-    // --- LOGIKA ULUBIONYCH ---
 
     public void addFavoriteGateway(Long gatewayId, User user) {
         Gateway gateway = gatewayRepository.findById(gatewayId)
@@ -149,15 +142,11 @@ public class FolderService {
                 .collect(Collectors.toList());
     }
 
-    // --- METODA POMOCNICZA (VALIDATOR) ---
-
     private void validateAccessToGateway(User user, Gateway gateway) {
-        // 1. Czy user jest właścicielem?
         if (gateway.getOwner().getId().equals(user.getId())) {
-            return; // OK
+            return;
         }
 
-        // 2. Jeśli nie, czy ma uprawnienie (Shared)?
         boolean hasPermission = permissionRepository
                 .findByGatewayIdAndUserId(gateway.getId(), user.getId())
                 .isPresent();

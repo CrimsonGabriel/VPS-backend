@@ -1,7 +1,6 @@
 package com.bazunia.vps.model;
 
 import jakarta.persistence.*;
-// <<< POPRAWKA: Zmiana importów Lombok >>>
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -12,12 +11,10 @@ import java.util.HashSet;
 import java.util.Set;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
-// <<< POPRAWKA: Usunięto @Data >>>
 @Getter
 @Setter
 @Entity
 @Table(name = "gateways")
-// <<< POPRAWKA: Dodano @ToString z wykluczeniami, aby uniknąć pętli i CME >>>
 @ToString(exclude = {"owner", "sensors", "readings", "permissions", "linkedFolders"})
 public class Gateway {
 
@@ -44,7 +41,6 @@ public class Gateway {
     @CreationTimestamp
     private LocalDateTime createdAt;
 
-    // Relacje do innych tabel
     @OneToMany(mappedBy = "gateway", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<Sensor> sensors;
 
@@ -58,7 +54,7 @@ public class Gateway {
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
-            name = "folder_gateways", // Nazwa tabeli z Twojego screena SQL
+            name = "folder_gateways",
             joinColumns = @JoinColumn(name = "gateway_id"),
             inverseJoinColumns = @JoinColumn(name = "folder_id")
     )
@@ -74,6 +70,6 @@ public class Gateway {
 
     @Override
     public int hashCode() {
-        return getClass().hashCode(); // Użyj stałej wartości lub ID, jeśli masz pewność, że nie jest nullem
+        return getClass().hashCode();
     }
 }

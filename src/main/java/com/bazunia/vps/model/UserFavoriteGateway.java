@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 public class UserFavoriteGateway {
 
     @EmbeddedId
-    private UserGatewayFavoriteId id; // Teraz poprawnie odnosi się do publicznej klasy
+    private UserGatewayFavoriteId id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @MapsId("userId")

@@ -20,22 +20,18 @@ public class SensorService {
 
     @Transactional
     public Sensor createSensor(SensorCreateRequest request) {
-        // 1. Sprawdź ID - jeśli istnieje, rzuć błąd (Conflict)
         if (sensorRepository.existsById(request.getId())) {
             throw new IllegalStateException("Sensor o ID " + request.getId() + " już istnieje.");
         }
 
-        // 2. Znajdź bramkę - jeśli brak, rzuć 404 (EntityNotFoundException)
         Gateway gateway = gatewayRepository.findById(request.getGatewayId())
                 .orElseThrow(() -> new EntityNotFoundException("Bramka o ID " + request.getGatewayId() + " nie istnieje."));
 
-        // 3. Unikalność nazwy
         sensorRepository.findByNameAndGatewayId(request.getName(), request.getGatewayId())
                 .ifPresent(existing -> {
                     throw new IllegalStateException("Sensor o nazwie '" + request.getName() + "' już istnieje w tej bramce.");
                 });
 
-        // 4. Stwórz i zapisz
         Sensor newSensor = mapToEntity(request, gateway);
         return sensorRepository.save(newSensor);
     }
@@ -45,7 +41,6 @@ public class SensorService {
         Sensor sensor = sensorRepository.findById(sensorId)
                 .orElseThrow(() -> new EntityNotFoundException("Sensor o ID " + sensorId + " nie istnieje."));
 
-        // Walidacja nazwy przy zmianie
         if (request.name() != null || request.gatewayId() != null) {
             String newName = (request.name() != null) ? request.name() : sensor.getName();
             Long newGatewayId = (request.gatewayId() != null) ? request.gatewayId() : sensor.getGateway().getId();
@@ -58,7 +53,6 @@ public class SensorService {
                     });
         }
 
-        // Update pól
         if (request.gatewayId() != null) {
             Gateway newGateway = gatewayRepository.findById(request.gatewayId())
                     .orElseThrow(() -> new EntityNotFoundException("Bramka o ID " + request.gatewayId() + " nie istnieje."));

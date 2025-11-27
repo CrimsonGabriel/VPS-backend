@@ -20,7 +20,7 @@ public class Folder {
     private String name;
 
     @Column
-    private String color; // Np. format HEX: "#FF5733"
+    private String color;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
@@ -34,21 +34,17 @@ public class Folder {
     )
     private Set<Gateway> gateways = new HashSet<>();
 
-    // ⭐️⭐️⭐️ NOWA SEKCJA (Krok 2) ⭐️⭐️⭐️
-    @ManyToMany(fetch = FetchType.LAZY) // Używamy LAZY dla wydajności
+    @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
-            name = "folder_sensors", // Nazwa nowej tabeli łączącej
+            name = "folder_sensors",
             joinColumns = @JoinColumn(name = "folder_id"),
             inverseJoinColumns = @JoinColumn(name = "sensor_id")
     )
     private Set<Sensor> sensors = new HashSet<>();
-    // ⭐️⭐️⭐️ KONIEC NOWEJ SEKCJI ⭐️⭐️⭐️
 
     public Folder(String name, String color, User owner) {
         this.name = name;
         this.color = color;
         this.owner = owner;
     }
-
-    // Gettery i Settery dla 'sensors' zostaną automatycznie dodane przez Lombok (@Data)
 }
