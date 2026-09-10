@@ -35,7 +35,6 @@ The central orchestrator and cloud API for the **Smart Home Ecosystem**. Deploye
 - [Raspberry Pi Node](https://github.com/CrimsonGabriel/RaspberryPI)
 - [Web Dashboard Frontend](https://github.com/CrimsonGabriel/VPS-frontend)
 - [Android App Repository](https://github.com/CrimsonGabriel/Android-SmartHome)
-
   ```mermaid
 graph TD
     subgraph Clients["📱 & 💻 Client Layer"]
